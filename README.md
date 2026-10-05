@@ -1,62 +1,48 @@
 # claude-work-panel
 
-A live work panel for Claude Code. Type `/work` and see what Claude is doing right now: the goal, a checklist of phases with the current one highlighted, a colour progress bar above your prompt, a focus timer that buzzes when it ends, and recent activity.
+A live progress panel for Claude Code. Type `/work` and see what Claude is doing, how far along it is, and what you could do next, in plain words.
 
-Built by someone with ADHD who kept losing track of what the agent was actually doing. Tasks feel less like a wall when you can see the one step in progress and the bar moving.
+I have ADHD and kept losing track of what the agent was actually doing. A wall of tool output does not tell you how far along you are. A bar and a few real numbers do.
 
-## What you get
+## What you see
 
-- **Progress bar** above the prompt, always on. It fills from real counts (35 of 105 threads done) or from phases, never from a guess
-- **The numbers** in plain words: found, picked, done, left alone
-- **Phase checklist** with the current step, and how long you have been on it
-- **Your move line**: the one small thing for you to do next
-- **Timer** in a boxed block at the top of the pane, with a draining bar and a buzz when it ends
-- **Focus view** that hides everything except the current step
-- **Recent activity** and background jobs
+- **A progress bar above your prompt, always on.** It fills from real counts or finished steps, never from a guess.
+- **The numbers in plain words.** For a job like clearing an inbox: `35 of 105 threads done. 70 to go.` with found, picked, done and left alone listed under it.
+- **A phase checklist for bigger jobs**, with the current step glowing and a "your move" line for the one thing you can do next.
+- **A focus timer** in a boxed block at the top. It drains as time passes and buzzes when it ends.
+- **A focus view** that hides everything except the current step.
+- **Recent activity and helpers**, so you can see what is running right now.
 
 ## Install
-
-You need Claude Code with plugin support and Python 3. The buzz sound uses PowerShell, so it is Windows only. On other systems the panel works but the buzz does nothing.
 
 ```
 /plugin marketplace add Arin117Kaushik/claude-work-panel
 /plugin install work-log@claude-work-panel
 ```
 
-Then copy the two helper scripts into `~/.claude/adhd-progress/`:
+Then run `/reload-plugins` and `/work`. That is all. The plugin copies its helper script into `~/.claude/adhd-progress/` on session start and adds a short rule to Claude's system prompt, so Claude starts a plan at the beginning of every task without you editing any file.
+
+You need Python 3 on your PATH.
+
+## How it works
+
+Claude runs `plan.py` at the start of a task and keeps the numbers current. The panel reads the result from `~/.claude/adhd-progress/plan.json`.
 
 ```
-mkdir -p ~/.claude/adhd-progress
-cp scripts/plan.py scripts/buzz.ps1 ~/.claude/adhd-progress/
+python plan.py work "Clear junk emails" 105 threads   # counted job, bar is done / total
+python plan.py stat "Found in inbox" 201              # a number shown in plain words
+python plan.py did 35                                 # add to the done count
+python plan.py quick "Fix the typo"                   # small task, bar only
+python plan.py new "Goal" "Phase 1" "Phase 2"         # bigger job with a checklist
+python plan.py next "what just got done"              # finish a phase
+python plan.py you "the one thing you could do"       # your move
 ```
 
-Optional: drop a `buzz.wav` or `buzz.mp3` in that folder to use your own sound. Without one you get the Windows alert.
+## Limits
 
-## How Claude drives it
-
-The panel reads `~/.claude/adhd-progress/plan.json`. Claude writes it with `plan.py`:
-
-```
-# a counted job: the bar is done / total
-python ~/.claude/adhd-progress/plan.py work "Clear junk emails" 105 threads
-python ~/.claude/adhd-progress/plan.py stat "Found in inbox" 201
-python ~/.claude/adhd-progress/plan.py did 35
-
-# a small task: bar only, three steps, no checklist
-python ~/.claude/adhd-progress/plan.py quick "Fix the typo"
-
-# a bigger job with phases and a checklist
-python ~/.claude/adhd-progress/plan.py new "Goal" "Phase 1|first physical step" "Phase 2" "Phase 3"
-python ~/.claude/adhd-progress/plan.py next "what just got done"
-python ~/.claude/adhd-progress/plan.py you "the one thing you could do"
-```
-
-To make Claude do this on its own, add a line like this to your `CLAUDE.md`:
-
-> At the start of every task, run `plan.py work` if the job has a countable total (emails, files, rows), `plan.py quick` if it is small, or `plan.py new` with phases if it is big. Report real numbers with `plan.py did` and `plan.py stat`, and `plan.py next` as phases finish. Switching tasks means a new plan.
-
-## Status
-
-Early. Written for one person's setup and tidied up for sharing. Issues and PRs welcome.
+- Tested on Windows 11 only. The panel should work elsewhere, but the timer buzz uses PowerShell, so it is silent on macOS and Linux.
+- To use your own sound, put a `buzz.wav` or `buzz.mp3` in `~/.claude/adhd-progress/`. Without one you get the Windows alert.
+- Early software. The plugin API it uses is new, so expect rough edges. Issues and PRs welcome.
+- This is a focus aid, not medical advice or treatment.
 
 MIT licensed.

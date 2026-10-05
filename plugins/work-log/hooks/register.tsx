@@ -8,6 +8,15 @@ const dir = async ($: { env: { get: (n: string) => Promise<string | undefined> }
   ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/') + '/.claude/adhd-progress/'
 // progress.json is optional (background jobs strip); plan.json is written by plan.py; buzz.ps1 plays buzz.wav or buzz.mp3 beside it, else the Windows alert
 const PANE = 'work-log'
+const SCRIPTS = ['plan.py', 'buzz.ps1'] // shipped in ./scripts, copied to the data folder on every session start
+
+// added to the system prompt so Claude feeds the panel without the user editing CLAUDE.md
+const planRule = (d: string) => `The user watches a live progress panel (/work) fed by ${d}plan.py. At the start of every task, before other work, run exactly one of:
+python "${d}plan.py" work "goal" TOTAL unit   (a countable job: emails, files, rows)
+python "${d}plan.py" quick "goal"   (a small task)
+python "${d}plan.py" new "goal" "phase 1" "phase 2"   (a bigger job)
+While working, report real numbers: plan.py did N, plan.py stat "Label" value (found, done, left alone). Run plan.py next "what got done" as phases finish and plan.py you "text" for the one step the user should take. A new task means a new plan. Keep the words short and plain.`
+
 const CELLS = 40
 
 const progress = atom({ plugin: 'work-log', key: 'progress' } as const, null)
@@ -81,6 +90,14 @@ export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
     sessionStart = await $.clock.now()
+    const d = await dir($)
+    for (const f of SCRIPTS) {
+      try {
+        await $.fs.write(d + f, await $.fs.read(`${$.plugin.root}/scripts/${f}`))
+      } catch {
+        // shipped copy missing: leave whatever the user already has
+      }
+    }
     await $.command.register({ name: 'work', description: 'Open the live work and agents panel' })
 
     const poll = async () => {
@@ -127,6 +144,11 @@ export const register: Register = on => {
     await $.ui.open({ id: PANE, title: 'Work' })
 
     return { text: 'Work panel opened.' }
+  })
+
+  on('prompt.compose', async ($, e, next) => {
+    const r = await next(e)
+    return { ...r, sections: [...r.sections, { id: 'work-log:planning', text: planRule(await dir($)), scope: 'session' as const }] }
   })
 
   on('tool.call', async ($, e, next) => {
