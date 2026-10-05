@@ -3,8 +3,9 @@ import type { Register } from 'claude-code'
 
 import type { Activity, AgentRow, Plan, Progress } from '../types'
 
-// data lives in ~/.claude/adhd-progress, found by trimming the plugin's own path back to the .claude folder
-const dir = ($: { plugin: { root: string } }) => $.plugin.root.replace(/\\/g, '/').split('/.claude/')[0] + '/.claude/adhd-progress/'
+// data lives in ~/.claude/adhd-progress, under the user's home folder
+const dir = async ($: { env: { get: (n: string) => Promise<string | undefined> } }) =>
+  ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/') + '/.claude/adhd-progress/'
 // progress.json is optional (background jobs strip); plan.json is written by plan.py; buzz.ps1 plays buzz.wav or buzz.mp3 beside it, else the Windows alert
 const PANE = 'work-log'
 const CELLS = 40
@@ -78,13 +79,13 @@ export const register: Register = on => {
 
     const poll = async () => {
       try {
-        const p: Progress = JSON.parse(await $.fs.read(dir($) + 'progress.json'))
+        const p: Progress = JSON.parse(await $.fs.read((await dir($)) + 'progress.json'))
         await update($, progress, () => p)
       } catch {
         // file missing or half-written: keep the last value
       }
       try {
-        const pl: Plan = JSON.parse(await $.fs.read(dir($) + 'plan.json'))
+        const pl: Plan = JSON.parse(await $.fs.read((await dir($)) + 'plan.json'))
         const fresh = (pl.updated ?? 0) * 1000 >= sessionStart
         await update($, plan, () => (fresh ? pl : null))
       } catch {
@@ -108,7 +109,8 @@ export const register: Register = on => {
       endsAt = null
       await update($, timer, x => ({ ...x, endsAt: null }))
       $.ui.toast('Time is up. You can stop now, or keep going.')
-      await $.process.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', dir($) + 'buzz.ps1'], { timeoutMs: 20000 }).catch(() => {})
+      const buzz = await $.process.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (await dir($)) + 'buzz.ps1'], { timeoutMs: 20000 }).catch(() => null)
+      if (!buzz || buzz.exitCode !== 0) $.ui.toast('Timer sound failed to play. Is buzz.ps1 in ~/.claude/adhd-progress?')
     })
 
 
