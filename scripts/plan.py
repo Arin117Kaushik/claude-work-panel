@@ -2,6 +2,10 @@
   plan.py new "goal" "phase 1|first step" "phase 2" ...   start a task, bar resets to 0 (first phase is 'doing')
   plan.py next ["win text"]                    finish the current phase, start the next
   plan.py you ["text"]                         set (or clear) the 'your move' line
+  plan.py work "goal" TOTAL unit               a counted job, e.g. work "Clear junk emails" 105 threads
+  plan.py did N                                add N to the done count
+  plan.py stat "Label" value                   show a number in plain words, e.g. stat Found 201
+  plan.py quick "goal"                         small task: bar only (Look, Do, Check), no checklist
 """
 import json, sys, datetime, pathlib, time
 F = pathlib.Path.home() / ".claude/adhd-progress/plan.json"
@@ -18,7 +22,19 @@ if cmd == "new":
         if i == 0: d["since"] = int(time.time())
         return d
     p.update(goal=a[0], phases=[ph(i, t) for i, t in enumerate(a[1:])])
-    p.pop("win", None); p.pop("you", None)
+    for k in ("win", "you", "total", "done", "unit", "stats", "small"): p.pop(k, None)
+elif cmd == "work":
+    p.update(goal=a[0], phases=[], total=int(a[1]), done=0, unit=a[2] if len(a) > 2 else "items", stats=[])
+    for k in ("win", "you", "small"): p.pop(k, None)
+elif cmd == "quick":
+    p.update(goal=a[0], phases=[{"name": n, "state": "doing" if i == 0 else "todo", **({"since": int(time.time())} if i == 0 else {})} for i, n in enumerate(("Look around", "Do it", "Check it"))], small=True)
+    for k in ("win", "you", "total", "done", "unit", "stats"): p.pop(k, None)
+elif cmd == "did":
+    p["done"] = p.get("done", 0) + int(a[0])
+elif cmd == "stat":
+    v = int(a[1]) if a[1].lstrip("-").isdigit() else a[1]
+    st = [x for x in p.get("stats", []) if x["label"] != a[0]]
+    p["stats"] = st + [{"label": a[0], "value": v}]
 elif cmd == "next":
     ph = p["phases"]; i = next((k for k, x in enumerate(ph) if x["state"] == "doing"), -1)
     if i >= 0: ph[i]["state"] = "done"
