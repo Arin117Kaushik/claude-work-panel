@@ -1,0 +1,7 @@
+{
+  "name": "claude-work-panel",
+  "owner": { "name": "Arin Kaushik" },
+  "plugins": [
+    { "name": "work-log", "source": "./plugins/work-log", "description": "/work opens a live panel in Claude Code: a progress bar, phase checklist, focus timer and recent activity, so you can see what is actually happening." }
+  ]
+}
