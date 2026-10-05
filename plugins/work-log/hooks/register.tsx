@@ -75,7 +75,8 @@ const detailOf = (e: Record<string, unknown>) => {
 export const register: Register = on => {
   let endsAt: number | null = null // the live deadline; the timer atom mirrors it for drawing
   let sessionStart = 0 // a plan older than this belongs to an earlier chat and stays hidden
-  let isBusy = false // set by the 2s poll, so the 30fps tick does no reads of its own
+  let isBusy = false // set by the 2s poll, so the 60fps tick does no reads of its own
+  let planActive = false // a plan phase is in progress, so its glow keeps moving even with no agent running
 
   on('session.start', async ($, e, next) => {
     sessionStart = await $.clock.now()
@@ -94,8 +95,9 @@ export const register: Register = on => {
         const pl: Plan = JSON.parse(await $.fs.read(dir($) + 'plan.json'))
         const fresh = (pl.updated ?? 0) * 1000 >= sessionStart
         await update($, plan, () => (fresh ? pl : null))
+        planActive = fresh && pl.phases.some(x => x.state === 'doing')
       } catch {
-        // no plan yet: the panel falls back to the plain progress bar
+        planActive = false // no plan yet: the panel falls back to the plain progress bar
       }
       const list = await $.agent.list()
       const rows: AgentRow[] = list.map(a => ({ id: a.id, type: a.type, description: a.description, status: a.status }))
@@ -119,9 +121,9 @@ export const register: Register = on => {
       await $.process.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', dir($) + 'buzz.ps1'], { timeoutMs: 20000 }).catch(() => {})
     })
 
-    // animation frame: only advances while something is running, so an idle panel stays still
-    $.clock.every(33, async () => {
-      if (isBusy) await update($, tick, n => n + 1)
+    // animation frame: only advances while something is running or a phase is in progress, so an idle panel stays still
+    $.clock.every(16, async () => {
+      if (isBusy || planActive) await update($, tick, n => n + 1)
     })
 
     return next(e)
@@ -183,7 +185,7 @@ export const register: Register = on => {
     const list = (await read($, agents)).filter(a => !gone.includes(a.id))
     const act = await read($, activity)
     const events = await read($, feed)
-    await read($, tick) // subscribes this pane to the 30fps redraw; the motion itself runs off the clock
+    await read($, tick) // subscribes this pane to the 60fps redraw; the motion itself runs off the clock
     const now = await $.clock.now()
     const t = now / 1000
     const rows = e.viewport?.rows ?? 30
