@@ -40,7 +40,7 @@ python plan.py you "the one thing you could do"       # your move
 
 ## Limits
 
-- Tested on Windows 11 only. The panel should work elsewhere, but the timer buzz uses PowerShell, so it is silent on macOS and Linux.
+- Tested on Windows 11 with Claude Code 2.1.289 only. The panel should work elsewhere, but the timer buzz uses PowerShell, so it is silent on macOS and Linux.
 - To use your own sound, put a `buzz.wav` or `buzz.mp3` in `~/.claude/adhd-progress/`. Without one you get the Windows alert.
 - Early software. The plugin API it uses is new, so expect rough edges. Issues and PRs welcome.
 - This is a focus aid, not medical advice or treatment.
