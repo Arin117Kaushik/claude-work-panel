@@ -17,7 +17,7 @@ declare module 'claude-code' {
       cleared: string[]
       timer: { mins: number; endsAt: number | null; now: number }
       focus: boolean
-      tick: number
+      turn: { since: number; steps: number; label: string } | null
     }
   }
 }

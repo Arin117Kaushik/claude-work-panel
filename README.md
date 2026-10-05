@@ -6,7 +6,7 @@ Built by someone with ADHD who kept losing track of what the agent was actually 
 
 ## What you get
 
-- **Progress bar** above the prompt, fills as phases finish
+- **Progress bar** above the prompt. With a plan it fills as phases finish. Without one (small tasks) it sweeps, with elapsed time and the step Claude is on, instead of faking a percentage
 - **Phase checklist** with the current step, and how long you have been on it
 - **Your move line**: the one small thing for you to do next
 - **Timer** in a boxed block at the top of the pane, with a draining bar and a buzz when it ends

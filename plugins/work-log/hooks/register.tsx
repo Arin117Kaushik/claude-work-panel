@@ -17,6 +17,7 @@ const activity = atom({ plugin: 'work-log', key: 'activity' } as const, {})
 const feed = atom({ plugin: 'work-log', key: 'feed' } as const, [])
 const cleared = atom({ plugin: 'work-log', key: 'cleared' } as const, [])
 const timer = atom({ plugin: 'work-log', key: 'timer' } as const, { mins: 5, endsAt: null, now: 0 })
+const turn = atom({ plugin: 'work-log', key: 'turn' } as const, null)
 const focus = atom({ plugin: 'work-log', key: 'focus' } as const, false)
 
 const mix = (a: number[], b: number[], t: number) =>
@@ -123,6 +124,18 @@ export const register: Register = on => {
     return { text: 'Work panel opened.' }
   })
 
+  // a turn is "working" from the prompt until the main loop answers; subagent turns do not end it
+  on('prompt.submit', async ($, e, next) => {
+    const since = await $.clock.now()
+    await update($, turn, () => ({ since, steps: 0, label: 'thinking' }))
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    if (!e.agentId) await update($, turn, () => null)
+    return next(e)
+  })
+
   on('tool.call', async ($, e, next) => {
     const key = e.agentId ?? 'main'
     const detail = detailOf(e as Record<string, unknown>)
@@ -130,6 +143,7 @@ export const register: Register = on => {
       const prev: Activity | undefined = all[key]
       return { ...all, [key]: { tool: e.tool, detail, count: (prev?.count ?? 0) + 1 } }
     })
+    await update($, turn, t => (t ? { ...t, steps: t.steps + 1, label: `step ${t.steps + 1}: ${e.tool} ${detail}`.slice(0, 60) } : t))
     const at = await $.clock.now()
     await update($, feed, all => [...all, { at, who: e.agentId ? e.agentId.slice(0, 4) : 'main', tool: e.tool, detail }].slice(-30))
 
@@ -140,13 +154,26 @@ export const register: Register = on => {
     const p = await read($, progress)
     const pl = await read($, plan)
     const tm = await read($, timer)
+    const tn = await read($, turn)
     const st = pl && pl.phases.length ? phaseStats(pl) : null
 
-    if (e.props.hasSurvey || (st === null && tm.endsAt === null)) {
+    if (e.props.hasSurvey || (st === null && tm.endsAt === null && !tn)) {
       return next(e)
     }
 
     const { Box, Button, Text } = $.ui.resolve(e)
+    const els = $.ui.resolve(e)
+    const Client = 'Client' in els ? els.Client : null
+    if (st === null && tn && Client) {
+      // no plan: a sweeping bar with the real step, never a made-up percentage
+      return (
+        <Box>
+          <Client key="sweep" module="./sweep.tsx" props={{ since: tn.since, cells: CELLS, label: tn.label }} />
+          {tm.endsAt !== null && <Text color={WIN} bold>{`  TIMER ${mmss(tm.endsAt - tm.now)} `}</Text>}
+          <Button key="open" label="details" onPress={() => $.ui.open({ id: PANE, title: 'Work' })} />
+        </Box>
+      )
+    }
     const pct = Math.max(0, Math.min(100, st ? st.percent : 0))
     const filled = Math.round((pct / 100) * CELLS)
 
@@ -171,6 +198,7 @@ export const register: Register = on => {
     const pl = await read($, plan)
     const gone = await read($, cleared)
     const tm = await read($, timer)
+    const tn = await read($, turn)
     const focusOn = await read($, focus)
     const list = (await read($, agents)).filter(a => !gone.includes(a.id))
     const act = await read($, activity)
@@ -252,6 +280,9 @@ export const register: Register = on => {
         </Box>
       </Box>
     )
+    const sweepRow = !st && tn && Client
+      ? <Client key="sweep" module="./sweep.tsx" props={{ since: tn.since, cells: 30, label: tn.label }} />
+      : null
     const cur = pl?.phases.find(x => x.state === 'doing')
     const curNo = pl ? pl.phases.findIndex(x => x.state === 'doing') + 1 : 0
     const onStep = cur?.since ? `on this step for ${Math.max(1, Math.round((now / 1000 - cur.since) / 60))} min` : ''
@@ -273,14 +304,17 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
-        <Box>
-          {Array.from({ length: 30 }, (_, i) => (
-            <Text key={i} color={i < filled ? shade(i, 30) : '#2a2c33'}>■</Text>
-          ))}
-          <Text color={ACCENT} bold>{` ${pct.toFixed(0)}%`}</Text>
-        </Box>
+        {(st || !tn) && (
+          <Box>
+            {Array.from({ length: 30 }, (_, i) => (
+              <Text key={i} color={i < filled ? shade(i, 30) : '#2a2c33'}>■</Text>
+            ))}
+            <Text color={ACCENT} bold>{` ${pct.toFixed(0)}%`}</Text>
+          </Box>
+        )}
         {buttons}
         {timerRow}
+        {sweepRow}
         {st && <Text color={st.done === st.total ? DONE : '#b79cff'} bold>{st.done === st.total ? 'All phases done. That was a lot.' : `${st.done} of ${st.total} phases done. ${st.total - st.done} to go.`}</Text>}
         <Text dimColor>{pl?.goal ?? ''}</Text>
         <Text> </Text>
