@@ -17,7 +17,6 @@ const feed = atom({ plugin: 'work-log', key: 'feed' } as const, [])
 const cleared = atom({ plugin: 'work-log', key: 'cleared' } as const, [])
 const timer = atom({ plugin: 'work-log', key: 'timer' } as const, { mins: 5, endsAt: null, now: 0 })
 const focus = atom({ plugin: 'work-log', key: 'focus' } as const, false)
-const tick = atom({ plugin: 'work-log', key: 'tick' } as const, 0)
 
 const mix = (a: number[], b: number[], t: number) =>
   '#' + a.map((x, i) => Math.round(x + (b[i]! - x) * t).toString(16).padStart(2, '0')).join('')
@@ -40,9 +39,6 @@ const WIN = '#e8b86d'
 const ACCENT = '#8fd8f0'
 const GREY = '#6b6f6c'
 const RED = '#ff5f5f'
-const PURPLE_DIM = [0x3d, 0x22, 0x78]
-const PURPLE = [0x8a, 0x5c, 0xf0]
-const PURPLE_HOT = [0xf2, 0xe4, 0xff]
 
 type Kind = 'done' | 'running' | 'bad' | 'idle'
 const kindOf = (s: string): Kind =>
@@ -75,18 +71,14 @@ const detailOf = (e: Record<string, unknown>) => {
 export const register: Register = on => {
   let endsAt: number | null = null // the live deadline; the timer atom mirrors it for drawing
   let sessionStart = 0 // a plan older than this belongs to an earlier chat and stays hidden
-  let isBusy = false // set by the 2s poll, so the 60fps tick does no reads of its own
-  let planActive = false // a plan phase is in progress, so its glow keeps moving even with no agent running
 
   on('session.start', async ($, e, next) => {
     sessionStart = await $.clock.now()
     await $.command.register({ name: 'work', description: 'Open the live work and agents panel' })
 
     const poll = async () => {
-      let jobsRunning = false
       try {
         const p: Progress = JSON.parse(await $.fs.read(dir($) + 'progress.json'))
-        jobsRunning = (p.jobs ?? []).some(j => j.state === 'running')
         await update($, progress, () => p)
       } catch {
         // file missing or half-written: keep the last value
@@ -95,14 +87,12 @@ export const register: Register = on => {
         const pl: Plan = JSON.parse(await $.fs.read(dir($) + 'plan.json'))
         const fresh = (pl.updated ?? 0) * 1000 >= sessionStart
         await update($, plan, () => (fresh ? pl : null))
-        planActive = fresh && pl.phases.some(x => x.state === 'doing')
       } catch {
-        planActive = false // no plan yet: the panel falls back to the plain progress bar
+        // no plan yet: the panel falls back to the plain progress bar
       }
       const list = await $.agent.list()
       const rows: AgentRow[] = list.map(a => ({ id: a.id, type: a.type, description: a.description, status: a.status }))
       await update($, agents, () => rows)
-      isBusy = jobsRunning || rows.some(a => a.status === 'running')
     }
     await poll()
     $.clock.every(2000, poll)
@@ -121,10 +111,6 @@ export const register: Register = on => {
       await $.process.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', dir($) + 'buzz.ps1'], { timeoutMs: 20000 }).catch(() => {})
     })
 
-    // animation frame: only advances while something is running or a phase is in progress, so an idle panel stays still
-    $.clock.every(16, async () => {
-      if (isBusy || planActive) await update($, tick, n => n + 1)
-    })
 
     return next(e)
   })
@@ -169,7 +155,7 @@ export const register: Register = on => {
         ))}
         <Text color={ACCENT} bold>{st ? ` ${st.done} of ${st.total} done` : ` ${pct.toFixed(0)}% `}</Text>
         {st?.now && <Text color="#b79cff">{`  now: ${st.now.name} `}</Text>}
-        {tm.endsAt !== null && <Text color={WIN} bold>{`  ${mmss(tm.endsAt - tm.now)} `}</Text>}
+        {tm.endsAt !== null && <Text color={WIN} bold>{`  TIMER ${mmss(tm.endsAt - tm.now)} `}</Text>}
         <Button key="open" label="details" onPress={() => $.ui.open({ id: PANE, title: 'Work' })} />
       </Box>
     )
@@ -177,6 +163,8 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
+    const els = $.ui.resolve(e)
+    const Client = 'Client' in els ? els.Client : null // only the terminal and desktop draw surface modules
     const p = await read($, progress)
     const pl = await read($, plan)
     const gone = await read($, cleared)
@@ -185,7 +173,6 @@ export const register: Register = on => {
     const list = (await read($, agents)).filter(a => !gone.includes(a.id))
     const act = await read($, activity)
     const events = await read($, feed)
-    await read($, tick) // subscribes this pane to the 60fps redraw; the motion itself runs off the clock
     const now = await $.clock.now()
     const t = now / 1000
     const rows = e.viewport?.rows ?? 30
@@ -200,17 +187,10 @@ export const register: Register = on => {
     const pct = Math.max(0, Math.min(100, st ? st.percent : 0))
     const filled = Math.round((pct / 100) * 30)
 
-    // pulsing pixel plus a bright spot sweeping across the name, like the ultracode shimmer
-    const glow = (name: string) => {
-      const pulse = (Math.sin(t * 3.3) + 1) / 2
-      const spot = (t * 6) % (name.length + 8) // fractional, so the bright spot glides between letters
-      return [
-        <Text key="px" color={mix(PURPLE_DIM, PURPLE_HOT, pulse)} bold>■ </Text>,
-        ...[...name].map((ch, i) => (
-          <Text key={i} color={mix(PURPLE, PURPLE_HOT, Math.max(0, 1 - Math.abs(spot - i) / 3.5))} bold>{ch}</Text>
-        )),
-      ]
-    }
+    // the glow animates in glow.tsx on the display's frame clock, not through this hook
+    const glow = (name: string) => Client
+      ? <Client key={`glow-${name}`} module="./glow.tsx" props={{ text: name }} />
+      : <Text color="#8a5cf0" bold>{`■ ${name}`}</Text>
 
     const line = (key: string, state: string, name: string, detail: string) => {
       const k = kindOf(state)
@@ -247,19 +227,27 @@ export const register: Register = on => {
         <Button key="close" label="close" onPress={() => $.ui.close({ id: PANE })} />
       </Box>
     )
+    const TW = 30
     const timerRow = tm.endsAt !== null ? (
-      <Box>
-        <Text color={WIN} bold>{`${mmss(left)} left  `}</Text>
+      <Box flexDirection="column" borderStyle="round" borderColor={WIN} paddingX={1}>
+        <Text color={WIN} bold>{`TIMER   ${mmss(left)} left`}</Text>
+        <Box>
+          {Array.from({ length: TW }, (_, i) => (
+            <Text key={i} color={i < Math.ceil((left / (tm.mins * 60000)) * TW) ? WIN : '#2a2c33'}>■</Text>
+          ))}
+        </Box>
         <Button key="stop" label="stop" onPress={stopTimer} />
       </Box>
     ) : (
-      <Box>
-        <Text>{`${tm.mins} min timer  `}</Text>
-        <Button key="less" label="-" onPress={() => bump(tm.mins <= 10 ? -1 : -5)} />
-        <Text>{' '}</Text>
-        <Button key="more" label="+" onPress={() => bump(tm.mins < 10 ? 1 : 5)} />
-        <Text>{'  '}</Text>
-        <Button key="start" label="start" onPress={startTimer} />
+      <Box flexDirection="column" borderStyle="round" borderColor={ACCENT} paddingX={1}>
+        <Text color={ACCENT} bold>{`TIMER   ${tm.mins} min`}</Text>
+        <Box>
+          <Button key="less" label="-" onPress={() => bump(tm.mins <= 10 ? -1 : -5)} />
+          <Text>{'  '}</Text>
+          <Button key="more" label="+" onPress={() => bump(tm.mins < 10 ? 1 : 5)} />
+          <Text>{'  '}</Text>
+          <Button key="start" label="start" onPress={startTimer} />
+        </Box>
       </Box>
     )
     const cur = pl?.phases.find(x => x.state === 'doing')
@@ -270,12 +258,11 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           {buttons}
+          {timerRow}
           <Text> </Text>
-          <Box>{glow(`${curNo}. ${cur.name}`)}</Box>
+          {glow(`${curNo}. ${cur.name}`)}
           {cur.note && <Text color="#b79cff">{`first step: ${cur.note}`}</Text>}
           {onStep && <Text color={GREY}>{onStep}</Text>}
-          <Text> </Text>
-          {timerRow}
           {pl?.you && <Text> </Text>}
           {pl?.you && <Text color="#ffd166" bold>{pl.you}</Text>}
         </Box>
@@ -291,6 +278,7 @@ export const register: Register = on => {
           <Text color={ACCENT} bold>{` ${pct.toFixed(0)}%`}</Text>
         </Box>
         {buttons}
+        {timerRow}
         {st && <Text color={st.done === st.total ? DONE : '#b79cff'} bold>{st.done === st.total ? 'All phases done. That was a lot.' : `${st.done} of ${st.total} phases done. ${st.total - st.done} to go.`}</Text>}
         <Text dimColor>{pl?.goal ?? ''}</Text>
         <Text> </Text>
@@ -308,13 +296,11 @@ export const register: Register = on => {
             })}
             {onStep && <Text color={GREY}>{onStep}</Text>}
             <Text> </Text>
-            {timerRow}
-            <Text> </Text>
           </Box>
         )}
         {!!pl?.tasksDone && <Text color={WIN} bold>{`Tasks finished today: ${pl.tasksDone}`}</Text>}
         {pl?.win && <Text color={WIN}>{`Latest win: ${pl.win}`}</Text>}
-        {pl?.you && <Text color="#ffd166" bold>{`Your move (only if you want it): ${pl.you}`}</Text>}
+        {pl?.you && <Text color="#ffd166" bold>{`Your move: ${pl.you}`}</Text>}
         {(pl?.win || pl?.you || !!pl?.tasksDone) && <Text> </Text>}
         {jobs.length > 0 && <Text bold>Working in the background</Text>}
         {jobs.map(j => line(j.name, j.state, j.name, `${say(j.state)}. ${j.detail}`))}

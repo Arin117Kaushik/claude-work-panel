@@ -9,7 +9,7 @@ Built by someone with ADHD who kept losing track of what the agent was actually 
 - **Progress bar** above the prompt, fills as phases finish
 - **Phase checklist** with the current step, and how long you have been on it
 - **Your move line**: the one small thing for you to do next
-- **Focus timer** with an adjustable length and a buzz when it ends
+- **Timer** in a boxed block at the top of the pane, with a draining bar and a buzz when it ends
 - **Focus view** that hides everything except the current step
 - **Recent activity** and background jobs
 

@@ -1,1 +1,1 @@
-{ "name": "work-log", "version": "0.8.0", "description": "Live work panel for Claude Code: phase checklist, progress bar, focus timer, jobs and recent activity. /work to open it." }
+{ "name": "work-log", "version": "0.9.0", "description": "Live work panel: phase checklist, progress strip above the prompt, jobs, helpers and recent activity. /work to open it.", "types": "./types/index.d.ts" }

@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-test('pane says nothing yet when no tools ran', async ($, on) => {
+test('pane shows the timer even with no plan', async ($, on) => {
   on('ui.render', () => ({ type: 'Box' as const }))
+  on('clock.now', () => ({ value: 0 }))
 
   const ui = await $.ui.mount({
     plugin: 'work-log',
@@ -17,6 +18,6 @@ test('pane says nothing yet when no tools ran', async ($, on) => {
       view: {},
     },
   })
-  expect(await ui.find({ type: 'Text', text: /no progress file yet/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /TIMER/ })).toBeDefined()
   await ui.unmount()
 })
