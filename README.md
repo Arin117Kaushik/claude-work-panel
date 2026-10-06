@@ -1,8 +1,28 @@
 # claude-work-panel
 
-A live progress panel for Claude Code. Type `/work` and see what Claude is doing, how far along it is, and what you could do next, in plain words.
+**See what your Claude is actually doing, instead of asking it for a status update.**
 
-I have ADHD and kept losing track of what the agent was actually doing. A wall of tool output does not tell you how far along you are. A bar and a few real numbers do.
+Type `/work` in Claude Code and a live panel shows what Claude is doing right now, how far along it is, and what is left. You look at the panel. You stop typing "where are you at?" and "how long will this take?".
+
+I have ADHD and kept losing track of what the agent was doing. A wall of tool output does not tell you how far along you are. A bar and a few real numbers do.
+
+## The problem
+
+When Claude works on a long task, you are in the dark. To find out how it is going you have to interrupt it and ask. It answers with a guess, and the ETA is usually wrong. You ask again ten minutes later.
+
+## The fix
+
+The progress lives on screen, not in a reply. You get control back: you can see the work, decide when to step in, and leave it alone the rest of the time.
+
+## How it works, in plain words
+
+1. **You give Claude a task.** Nothing else changes. You talk to it like always.
+2. **Claude makes a plan first.** Before it starts, it writes down the goal. If the job can be counted (105 emails, 40 files), it records the total. If it is bigger, it lists the phases.
+3. **Claude reports real numbers as it goes.** After each chunk of work it updates the count: `35 of 105 done`. These are counts of work finished, not a guess at time left.
+4. **The panel shows it live.** The bar fills from those counts. Underneath you see what Claude is doing this second, in plain words, like `Searching the web` or `Reading the page`.
+5. **You get one clear next step.** When Claude needs you, the panel shows a single "your move" line. Otherwise you can ignore it.
+
+That is the whole loop: plan, count, show. Because the bar only moves when real work is finished, you can trust it.
 
 ## What you see
 
