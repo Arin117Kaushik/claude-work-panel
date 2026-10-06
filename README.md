@@ -6,6 +6,12 @@ Type `/work` in Claude Code and a live panel shows what Claude is doing right no
 
 I have ADHD and kept losing track of what the agent was doing. A wall of tool output does not tell you how far along you are. A bar and a few real numbers do.
 
+## Demo
+
+<video src="https://github.com/Arin117Kaushik/claude-work-panel/raw/master/assets/demo.mp4" controls muted width="100%"></video>
+
+If the video does not play above, [watch the 80 second demo here](assets/demo.mp4).
+
 ## The problem
 
 When Claude works on a long task, you are in the dark. To find out how it is going you have to interrupt it and ask. It answers with a guess, and the ETA is usually wrong. You ask again ten minutes later.
