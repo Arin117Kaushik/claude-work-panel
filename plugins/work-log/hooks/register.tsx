@@ -1,6 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
+import { countLine, tallyLines, words } from './words'
 import type { Activity, AgentRow, Plan, Progress } from '../types'
 
 // data lives in ~/.claude/adhd-progress, under the user's home folder
@@ -15,7 +16,7 @@ const planRule = (d: string) => `The user watches a live progress panel (/work) 
 python "${d}plan.py" work "goal" TOTAL unit   (a countable job: emails, files, rows)
 python "${d}plan.py" quick "goal"   (a small task)
 python "${d}plan.py" new "goal" "phase 1" "phase 2"   (a bigger job)
-While working, report real numbers: plan.py did N, plan.py stat "Label" value (found, done, left alone). Run plan.py next "what got done" as phases finish and plan.py you "text" for the one step the user should take. A new task means a new plan. Keep the words short and plain.`
+While working, report real numbers: plan.py did N, plan.py stat "Label" value (found, done, left alone). Run plan.py next "what got done" as phases finish and plan.py you "text" for the one step the user should take. A new task means a new plan. Name phases and describe work in plain action words a stranger would understand, like Searching the web, Reading the page, Drafting the post, Checking the draft. The panel counts searches, pages read and files changed by itself, so do not report those with stat. Keep the words short and plain.`
 
 const CELLS = 40
 
@@ -26,6 +27,7 @@ const activity = atom({ plugin: 'work-log', key: 'activity' } as const, {})
 const feed = atom({ plugin: 'work-log', key: 'feed' } as const, [])
 const cleared = atom({ plugin: 'work-log', key: 'cleared' } as const, [])
 const timer = atom({ plugin: 'work-log', key: 'timer' } as const, { mins: 5, endsAt: null, now: 0 })
+const tally = atom({ plugin: 'work-log', key: 'tally' } as const, { counts: {}, now: null })
 const focus = atom({ plugin: 'work-log', key: 'focus' } as const, false)
 
 const mix = (a: number[], b: number[], t: number) =>
@@ -76,7 +78,7 @@ const progressOf = (pl: Plan) => {
 
 const mmss = (ms: number) => `${Math.floor(Math.max(0, ms) / 60000)}:${String(Math.floor(Math.max(0, ms) / 1000) % 60).padStart(2, '0')}`
 
-const DETAIL_KEYS = ['file_path', 'url', 'query', 'command', 'pattern', 'description', 'prompt']
+const DETAIL_KEYS = ['file_path', 'url', 'query', 'command', 'pattern', 'description', 'prompt', 'action']
 const detailOf = (e: Record<string, unknown>) => {
   for (const k of DETAIL_KEYS) {
     if (typeof e[k] === 'string' && e[k]) return (e[k] as string).replace(/\s+/g, ' ').slice(0, 70)
@@ -146,6 +148,7 @@ export const register: Register = on => {
     await update($, plan, () => null)
     await update($, feed, () => [])
     await update($, activity, () => ({}))
+    await update($, tally, () => ({ counts: {}, now: null }))
     await update($, cleared, () => [])
     return next(e)
   })
@@ -161,6 +164,17 @@ export const register: Register = on => {
     return { ...r, sections: [...r.sections, { id: 'work-log:planning', text: planRule(await dir($)), scope: 'session' as const }] }
   })
 
+  // counts are per task: they start over when you send a new prompt, and "now" clears when the main reply ends
+  on('prompt.submit', async ($, e, next) => {
+    await update($, tally, () => ({ counts: {}, now: null }))
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    if (!e.agentId) await update($, tally, t => ({ ...t, now: null }))
+    return next(e)
+  })
+
   on('tool.call', async ($, e, next) => {
     const key = e.agentId ?? 'main'
     const detail = detailOf(e as Record<string, unknown>)
@@ -168,6 +182,8 @@ export const register: Register = on => {
       const prev: Activity | undefined = all[key]
       return { ...all, [key]: { tool: e.tool, detail, count: (prev?.count ?? 0) + 1 } }
     })
+    const wd = words(e.tool)
+    await update($, tally, t => ({ counts: { ...t.counts, [wd.kind]: (t.counts[wd.kind] ?? 0) + 1 }, now: { text: wd.now, kind: wd.kind, detail } }))
     const at = await $.clock.now()
     await update($, feed, all => [...all, { at, who: e.agentId ? e.agentId.slice(0, 4) : 'main', tool: e.tool, detail }].slice(-30))
 
@@ -178,6 +194,7 @@ export const register: Register = on => {
     const p = await read($, progress)
     const pl = await read($, plan)
     const tm = await read($, timer)
+    const ty = await read($, tally)
     const st = pl ? progressOf(pl) : null
 
     if (e.props.hasSurvey) {
@@ -188,15 +205,19 @@ export const register: Register = on => {
     const pct = Math.max(0, Math.min(100, st ? st.percent : 0))
     const filled = Math.round((pct / 100) * CELLS)
 
+    const c = ty.now ? countLine(ty.now.kind, ty.counts[ty.now.kind] ?? 0) : ''
     return (
-      <Box>
-        {Array.from({ length: CELLS }, (_, i) => (
-          <Text key={i} color={i < filled ? shade(i) : '#2a2c33'}>■</Text>
-        ))}
-        <Text color={ACCENT} bold>{st ? ` ${st.done} of ${st.total} ${st.unit} done` : ' no task yet'}</Text>
-        {st?.now && <Text color="#b79cff">{`  now: ${st.now.name} `}</Text>}
-        {tm.endsAt !== null && <Text color={WIN} bold>{`  TIMER ${mmss(tm.endsAt - tm.now)} `}</Text>}
-        <Button key="open" label="details" onPress={() => $.ui.open({ id: PANE, title: 'Work' })} />
+      <Box flexDirection="column">
+        <Box>
+          {Array.from({ length: CELLS }, (_, i) => (
+            <Text key={i} color={i < filled ? shade(i) : '#2a2c33'}>■</Text>
+          ))}
+          <Text color={ACCENT} bold>{st ? ` ${st.done} of ${st.total} ${st.unit} done` : ' no task yet'}</Text>
+          {st?.now && <Text color="#b79cff">{`  now: ${st.now.name} `}</Text>}
+          {tm.endsAt !== null && <Text color={WIN} bold>{`  TIMER ${mmss(tm.endsAt - tm.now)} `}</Text>}
+          <Button key="open" label="details" onPress={() => $.ui.open({ id: PANE, title: 'Work' })} />
+        </Box>
+        {ty.now && <Text color={GREY}>{`${ty.now.text}${c ? '  ·  ' + c : ''}`}</Text>}
       </Box>
     )
   })
@@ -213,6 +234,7 @@ export const register: Register = on => {
     const list = (await read($, agents)).filter(a => !gone.includes(a.id))
     const act = await read($, activity)
     const events = await read($, feed)
+    const ty = await read($, tally)
     const now = await $.clock.now()
     const t = now / 1000
     const rows = e.viewport?.rows ?? 30
@@ -222,7 +244,6 @@ export const register: Register = on => {
     const age = (t: number) => { const d = Math.round((now - t) / 1000); return d < 90 ? `${d}s` : `${Math.round(d / 60)}m` }
     const order = (s: string) => ({ running: 0, bad: 1, idle: 2, done: 3 })[kindOf(s)]
     const shown = [...list].sort((a, b) => order(a.status) - order(b.status)).slice(0, room)
-    const main = act['main']
     const st = pl ? progressOf(pl) : null
     const pct = Math.max(0, Math.min(100, st ? st.percent : 0))
     const filled = Math.round((pct / 100) * 30)
@@ -352,23 +373,29 @@ export const register: Register = on => {
         {jobs.length > 0 && <Text bold>Working in the background</Text>}
         {jobs.map(j => line(j.name, j.state, j.name, `${say(j.state)}. ${j.detail}`))}
         {jobs.length > 0 && <Text> </Text>}
-        {main && <Text bold>Right now</Text>}
-        {main && <Text color={GREY}>{`${main.tool} ${main.detail}  (step ${main.count})`}</Text>}
-        {main && <Text> </Text>}
+        {ty.now && <Text bold>Right now</Text>}
+        {ty.now && <Text color={ACCENT}>{ty.now.text}</Text>}
+        {ty.now?.detail && <Text color={GREY}>{`  ${ty.now.detail}`}</Text>}
+        {ty.now && <Text> </Text>}
+        {tallyLines(ty.counts).length > 0 && <Text bold>So far on this task</Text>}
+        {tallyLines(ty.counts).map(l => (
+          <Text key={l} color={GREY}>{`  ${l}`}</Text>
+        ))}
+        {tallyLines(ty.counts).length > 0 && <Text> </Text>}
         {list.length > 0 && <Text bold>{`Helpers (${list.filter(a => a.status === 'running').length} busy, ${list.length} total)`}</Text>}
         {shown.map(a => {
           const x = act[a.id]
           return (
             <Box key={a.id} flexDirection="column">
               {line(a.id, a.status, `${a.type}: ${a.description}`, say(a.status))}
-              <Text color={GREY}>{x ? `   ${x.tool} ${x.detail}  (${x.count})` : `   ${a.status}`}</Text>
+              <Text color={GREY}>{x ? `   ${words(x.tool).now}${x.detail ? ': ' + x.detail : ''}  (${x.count})` : `   ${a.status}`}</Text>
             </Box>
           )
         })}
         {list.length > 0 && <Text> </Text>}
         {events.length > 0 && <Text bold>Just happened</Text>}
         {[...events].reverse().slice(0, feedRows).map((ev, i) => (
-          <Text key={i} color={GREY}>{`${age(ev.at)} ${ev.who} ${ev.tool} ${ev.detail}`}</Text>
+          <Text key={i} color={GREY}>{`${age(ev.at)} ${ev.who === 'main' ? '' : ev.who + ' '}${words(ev.tool).past}${ev.detail ? ': ' + ev.detail : ''}`}</Text>
         ))}
       </Box>
     )

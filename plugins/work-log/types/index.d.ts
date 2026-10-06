@@ -17,6 +17,7 @@ declare module 'claude-code' {
       feed: Event[]
       cleared: string[]
       timer: { mins: number; endsAt: number | null; now: number }
+      tally: { counts: Record<string, number>; now: { text: string; kind: string; detail: string } | null }
       focus: boolean
     }
   }

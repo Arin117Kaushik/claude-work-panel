@@ -8,6 +8,7 @@ I have ADHD and kept losing track of what the agent was actually doing. A wall o
 
 - **A progress bar above your prompt, always on.** It fills from real counts or finished steps, never from a guess.
 - **The numbers in plain words.** For a job like clearing an inbox: `35 of 105 threads done. 70 to go.` with found, picked, done and left alone listed under it.
+- **What Claude is doing right now, in plain words.** Not `mcp__claude-in-chrome__navigate`, but `Opening a page in Chrome`, `Searching the web  ·  4 web searches done`, `Reading the page in Chrome`, `Cleaning up email`. The pane keeps a running tally for the task: web searches done, pages read, files changed, commands run.
 - **A phase checklist for bigger jobs**, with the current step glowing and a "your move" line for the one thing you can do next.
 - **A focus timer** in a boxed block at the top. It drains as time passes and buzzes when it ends.
 - **A focus view** that hides everything except the current step.
