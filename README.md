@@ -8,9 +8,9 @@ I have ADHD and kept losing track of what the agent was doing. A wall of tool ou
 
 ## Demo
 
-<video src="https://github.com/Arin117Kaushik/claude-work-panel/raw/main/assets/demo.mp4" controls muted width="100%"></video>
+![Demo of the /work panel](assets/demo.gif)
 
-If the video does not play above, [watch the 80 second demo here](assets/demo.mp4).
+[Watch the full quality video](assets/demo.mp4) (80 seconds).
 
 ## The problem
 
