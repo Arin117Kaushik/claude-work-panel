@@ -10,8 +10,6 @@ I have ADHD and kept losing track of what the agent was doing. A wall of tool ou
 
 ![Demo of the /work panel](assets/demo.gif)
 
-[Watch the full quality video](assets/demo.mp4) (80 seconds).
-
 ## The problem
 
 When Claude works on a long task, you are in the dark. To find out how it is going you have to interrupt it and ask. It answers with a guess, and the ETA is usually wrong. You ask again ten minutes later.
