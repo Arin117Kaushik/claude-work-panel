@@ -140,6 +140,16 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // /clear fires no session.start: the process goes on under a new session id, so the old plan is dropped here
+  on('session.end', async ($, e, next) => {
+    sessionStart = await $.clock.now()
+    await update($, plan, () => null)
+    await update($, feed, () => [])
+    await update($, activity, () => ({}))
+    await update($, cleared, () => [])
+    return next(e)
+  })
+
   on('command.run', { command: 'work' }, async $ => {
     await $.ui.open({ id: PANE, title: 'Work' })
 

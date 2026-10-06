@@ -1,1 +1,1 @@
-{ "name": "work-log", "version": "0.12.0", "description": "Live work panel: phase checklist, progress strip above the prompt, jobs, helpers and recent activity. /work to open it.", "types": "./types/index.d.ts" }
+{ "name": "work-log", "version": "0.12.1", "description": "Live work panel: phase checklist, progress strip above the prompt, jobs, helpers and recent activity. /work to open it.", "types": "./types/index.d.ts" }
