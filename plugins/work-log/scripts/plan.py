@@ -5,7 +5,6 @@
   plan.py work "goal" TOTAL unit               a counted job, e.g. work "Clear junk emails" 105 threads
   plan.py did N                                add N to the done count
   plan.py stat "Label" value                   show a number in plain words, e.g. stat Found 201
-  plan.py quick "goal"                         small task: bar only (Look, Do, Check), no checklist
 """
 import json, sys, datetime, pathlib, time, os
 F = pathlib.Path.home() / ".claude/adhd-progress/plan.json"
@@ -22,13 +21,10 @@ if cmd == "new":
         if i == 0: d["since"] = int(time.time())
         return d
     p.update(goal=a[0], phases=[ph(i, t) for i, t in enumerate(a[1:])])
-    for k in ("win", "you", "total", "done", "unit", "stats", "small"): p.pop(k, None)
+    for k in ("win", "you", "total", "done", "unit", "stats"): p.pop(k, None)
 elif cmd == "work":
     p.update(goal=a[0], phases=[], total=int(a[1]), done=0, unit=a[2] if len(a) > 2 else "items", stats=[])
-    for k in ("win", "you", "small"): p.pop(k, None)
-elif cmd == "quick":
-    p.update(goal=a[0], phases=[{"name": n, "state": "doing" if i == 0 else "todo", **({"since": int(time.time())} if i == 0 else {})} for i, n in enumerate(("Look around", "Do it", "Check it"))], small=True)
-    for k in ("win", "you", "total", "done", "unit", "stats"): p.pop(k, None)
+    for k in ("win", "you"): p.pop(k, None)
 elif cmd == "did":
     p["done"] = p.get("done", 0) + int(a[0])
 elif cmd == "stat":

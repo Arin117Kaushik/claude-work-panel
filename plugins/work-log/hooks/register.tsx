@@ -12,10 +12,9 @@ const PANE = 'work-log'
 const SCRIPTS = ['plan.py', 'buzz.ps1'] // shipped in ./scripts, copied to the data folder on every session start
 
 // added to the system prompt so Claude feeds the panel without the user editing CLAUDE.md
-const planRule = (d: string) => `The user watches a live progress panel (/work) fed by ${d}plan.py. At the start of every task, before other work, run exactly one of:
+const planRule = (d: string) => `The user watches a live progress panel (/work) fed by ${d}plan.py. Plan only work that has real structure. Skip the plan for one-shot work: a single reply, writing or editing a short piece, answering a question, one lookup, a small fix. For those, run nothing. When a task has a countable total or three or more distinct steps, run exactly one of these before other work:
 python "${d}plan.py" work "goal" TOTAL unit   (a countable job: emails, files, rows)
-python "${d}plan.py" quick "goal"   (a small task)
-python "${d}plan.py" new "goal" "phase 1" "phase 2"   (a bigger job)
+python "${d}plan.py" new "goal" "phase 1" "phase 2"   (a bigger job with steps)
 While working, report real numbers: plan.py did N, plan.py stat "Label" value (found, done, left alone). Run plan.py next "what got done" as phases finish and plan.py you "text" for the one step the user should take. A new task means a new plan. Name phases and describe work in plain action words a stranger would understand, like Searching the web, Reading the page, Drafting the post, Checking the draft. The panel counts searches, pages read and files changed by itself, so do not report those with stat. Keep the words short and plain.`
 
 const CELLS = 40
@@ -88,7 +87,7 @@ const detailOf = (e: Record<string, unknown>) => {
 
 export const register: Register = on => {
   let endsAt: number | null = null // the live deadline; the timer atom mirrors it for drawing
-  let sessionStart = 0 // a plan older than this belongs to an earlier chat and stays hidden
+  let sessionStart = 0 // a plan older than this belongs to an earlier chat or a finished task and stays hidden
 
   on('session.start', async ($, e, next) => {
     sessionStart = await $.clock.now()
@@ -167,6 +166,12 @@ export const register: Register = on => {
 
   // counts are per task: they start over when you send a new prompt, and "now" clears when the main reply ends
   on('prompt.submit', async ($, e, next) => {
+    const old = await read($, plan)
+    const was = old ? progressOf(old) : null
+    if (was && was.done >= was.total) {
+      sessionStart = await $.clock.now() // a finished plan is not shown against the next, unplanned task
+      await update($, plan, () => null)
+    }
     await update($, tally, () => ({ counts: {}, now: null }))
     return next(e)
   })
@@ -205,16 +210,28 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const pct = Math.max(0, Math.min(100, st ? st.percent : 0))
     const filled = Math.round((pct / 100) * CELLS)
-
     const c = ty.now ? countLine(ty.now.kind, ty.counts[ty.now.kind] ?? 0) : ''
+
+    // no plan means a one-shot task: no bar to fake, just what is happening right now (and the timer if it runs)
+    if (!st) {
+      if (!ty.now && tm.endsAt === null) return next(e)
+      return (
+        <Box>
+          {ty.now && <Text color={GREY}>{`${ty.now.text}${c ? '  ·  ' + c : ''}`}</Text>}
+          {tm.endsAt !== null && <Text color={WIN} bold>{`  TIMER ${mmss(tm.endsAt - tm.now)} `}</Text>}
+          <Button key="open" label="details" onPress={() => $.ui.open({ id: PANE, title: 'Work' })} />
+        </Box>
+      )
+    }
+
     return (
       <Box flexDirection="column">
         <Box>
           {Array.from({ length: CELLS }, (_, i) => (
             <Text key={i} color={i < filled ? shade(i) : '#2a2c33'}>■</Text>
           ))}
-          <Text color={ACCENT} bold>{st ? ` ${st.done} of ${st.total} ${st.unit} done` : ' no task yet'}</Text>
-          {st?.now && <Text color="#b79cff">{`  now: ${st.now.name} `}</Text>}
+          <Text color={ACCENT} bold>{` ${st.done} of ${st.total} ${st.unit} done`}</Text>
+          {st.now && <Text color="#b79cff">{`  now: ${st.now.name} `}</Text>}
           {tm.endsAt !== null && <Text color={WIN} bold>{`  TIMER ${mmss(tm.endsAt - tm.now)} `}</Text>}
           <Button key="open" label="details" onPress={() => $.ui.open({ id: PANE, title: 'Work' })} />
         </Box>
@@ -333,12 +350,14 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
-        <Box>
-          {Array.from({ length: 30 }, (_, i) => (
-            <Text key={i} color={i < filled ? shade(i, 30) : '#2a2c33'}>■</Text>
-          ))}
-          <Text color={ACCENT} bold>{` ${pct.toFixed(0)}%`}</Text>
-        </Box>
+        {st && (
+          <Box>
+            {Array.from({ length: 30 }, (_, i) => (
+              <Text key={i} color={i < filled ? shade(i, 30) : '#2a2c33'}>■</Text>
+            ))}
+            <Text color={ACCENT} bold>{` ${pct.toFixed(0)}%`}</Text>
+          </Box>
+        )}
         {buttons}
         {timerRow}
         {st && <Text color={st.done === st.total ? DONE : '#b79cff'} bold>{st.done === st.total ? `All ${st.total} ${st.unit} done.` : `${st.done} of ${st.total} ${st.unit} done. ${st.total - st.done} to go.`}</Text>}
@@ -351,7 +370,7 @@ export const register: Register = on => {
           </Box>
         )}
         <Text> </Text>
-        {pl && !pl.small && pl.phases.length > 0 && (
+        {pl && pl.phases.length > 0 && (
           <Box flexDirection="column">
             <Text bold>The plan</Text>
             {pl.phases.map((ph, i) => {

@@ -30,7 +30,7 @@ That is the whole loop: plan, count, show. Because the bar only moves when real 
 
 ## What you see
 
-- **A progress bar above your prompt, always on.** It fills from real counts or finished steps, never from a guess.
+- **A progress bar above your prompt for planned work.** It fills from real counts or finished steps, never from a guess. One-shot tasks like a quick reply or a short draft get no plan and no empty bar, just the line saying what Claude is doing.
 - **The numbers in plain words.** For a job like clearing an inbox: `35 of 105 threads done. 70 to go.` with found, picked, done and left alone listed under it.
 - **What Claude is doing right now, in plain words.** Not `mcp__claude-in-chrome__navigate`, but `Opening a page in Chrome`, `Searching the web  ·  4 web searches done`, `Reading the page in Chrome`, `Cleaning up email`. The pane keeps a running tally for the task: web searches done, pages read, files changed, commands run.
 - **A phase checklist for bigger jobs**, with the current step glowing and a "your move" line for the one thing you can do next.
@@ -51,13 +51,12 @@ You need Python 3 on your PATH.
 
 ## How it works
 
-Claude runs `plan.py` at the start of a task and keeps the numbers current. The panel reads the result from `~/.claude/adhd-progress/plan.json`.
+Claude runs `plan.py` at the start of work that has a countable total or three or more steps, and keeps the numbers current. Small tasks are not planned. The panel reads the result from `~/.claude/adhd-progress/plan.json`.
 
 ```
 python plan.py work "Clear junk emails" 105 threads   # counted job, bar is done / total
 python plan.py stat "Found in inbox" 201              # a number shown in plain words
 python plan.py did 35                                 # add to the done count
-python plan.py quick "Fix the typo"                   # small task, bar only
 python plan.py new "Goal" "Phase 1" "Phase 2"         # bigger job with a checklist
 python plan.py next "what just got done"              # finish a phase
 python plan.py you "the one thing you could do"       # your move
