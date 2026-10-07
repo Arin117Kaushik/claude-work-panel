@@ -87,7 +87,8 @@ const detailOf = (e: Record<string, unknown>) => {
 
 export const register: Register = on => {
   let endsAt: number | null = null // the live deadline; the timer atom mirrors it for drawing
-  let sessionStart = 0 // a plan older than this belongs to an earlier chat or a finished task and stays hidden
+  let sessionStart = 0 // an unstamped plan older than this belongs to an earlier chat and stays hidden
+  let hideBefore = 0 // a plan finished before this is not shown against the next, unplanned task
 
   on('session.start', async ($, e, next) => {
     sessionStart = await $.clock.now()
@@ -111,7 +112,8 @@ export const register: Register = on => {
       try {
         const pl: Plan = JSON.parse(await $.fs.read((await dir($)) + 'plan.json'))
         // plan.json is one file shared by every chat on the machine: show it only if this chat wrote it
-        const fresh = pl.session ? pl.session === (await $.session.id()) : (pl.updated ?? 0) * 1000 >= sessionStart
+        const mine = pl.session ? pl.session === (await $.session.id()) : (pl.updated ?? 0) * 1000 >= sessionStart
+        const fresh = mine && ((pl.updated ?? 0) + 1) * 1000 > hideBefore // +1s: plan.json stores whole seconds
         await update($, plan, () => (fresh ? pl : null))
       } catch {
         // no plan yet: the panel falls back to the plain progress bar
@@ -169,7 +171,7 @@ export const register: Register = on => {
     const old = await read($, plan)
     const was = old ? progressOf(old) : null
     if (was && was.done >= was.total) {
-      sessionStart = await $.clock.now() // a finished plan is not shown against the next, unplanned task
+      hideBefore = await $.clock.now()
       await update($, plan, () => null)
     }
     await update($, tally, () => ({ counts: {}, now: null }))
