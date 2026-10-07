@@ -7,7 +7,7 @@
   plan.py stat "Label" value                   show a number in plain words, e.g. stat Found 201
 """
 import json, sys, datetime, pathlib, time, os
-F = pathlib.Path.home() / ".claude/adhd-progress/plan.json"
+F = pathlib.Path(os.environ.get("WORK_PLAN_FILE") or pathlib.Path.home() / ".claude/adhd-progress/plan.json")
 today = datetime.date.today().isoformat()
 try: p = json.loads(F.read_text(encoding="utf-8"))
 except Exception: p = {}
@@ -34,8 +34,9 @@ elif cmd == "stat":
 elif cmd == "next":
     ph = p["phases"]; i = next((k for k, x in enumerate(ph) if x["state"] == "doing"), -1)
     if i >= 0: ph[i]["state"] = "done"
-    if i + 1 < len(ph): ph[i + 1]["state"], ph[i + 1]["since"] = "doing", int(time.time())
-    elif p.get("phases"): p["tasksDone"] = p.get("tasksDone", 0) + 1
+    nxt = next((k for k, x in enumerate(ph) if x["state"] == "todo"), -1)  # only a todo phase starts, so a stray next never reopens a finished plan
+    if nxt >= 0: ph[nxt]["state"], ph[nxt]["since"] = "doing", int(time.time())
+    elif i >= 0: p["tasksDone"] = p.get("tasksDone", 0) + 1
     if a: p["win"] = a[0]
 elif cmd == "you":
     if a and a[0]: p["you"] = a[0]
