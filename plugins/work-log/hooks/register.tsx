@@ -111,7 +111,8 @@ export const register: Register = on => {
       }
       try {
         const pl: Plan = JSON.parse(await $.fs.read((await dir($)) + 'plan.json'))
-        const fresh = (pl.updated ?? 0) * 1000 >= sessionStart
+        // plan.json is one file shared by every chat on the machine: show it only if this chat wrote it
+        const fresh = pl.session ? pl.session === (await $.session.id()) : (pl.updated ?? 0) * 1000 >= sessionStart
         await update($, plan, () => (fresh ? pl : null))
       } catch {
         // no plan yet: the panel falls back to the plain progress bar

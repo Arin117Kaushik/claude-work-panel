@@ -7,7 +7,7 @@
   plan.py stat "Label" value                   show a number in plain words, e.g. stat Found 201
   plan.py quick "goal"                         small task: bar only (Look, Do, Check), no checklist
 """
-import json, sys, datetime, pathlib, time
+import json, sys, datetime, pathlib, time, os
 F = pathlib.Path.home() / ".claude/adhd-progress/plan.json"
 today = datetime.date.today().isoformat()
 try: p = json.loads(F.read_text(encoding="utf-8"))
@@ -45,4 +45,5 @@ elif cmd == "you":
     if a and a[0]: p["you"] = a[0]
     else: p.pop("you", None)
 p["updated"] = int(time.time())
+p["session"] = os.environ.get("CLAUDE_CODE_SESSION_ID", "")  # the panel only shows a plan written by its own chat
 F.write_text(json.dumps(p, indent=2), encoding="utf-8")
