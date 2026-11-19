@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { CASE_H, CASE_W, badgeCase } from './badgecase'
 import { STATE_ITEM, ballFor, healTray, icon, timerBall, trayWidth } from './centre'
-import { PANEL_BG } from './panelbg'
+import { PANEL_HEAD } from './panelbg'
 import { BADGE_NAMES } from './sprites'
 import { countLine, tallyLines, words } from './words'
 import type { Activity, AgentRow, Badges, Live, Plan, Progress } from '../types'
@@ -528,9 +528,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column" backgroundColor="#1a0c14" paddingX={1} paddingBottom={1}>
-        <Box position="absolute" top={0} left={0} right={0} bottom={0} overflow="hidden">
-          {Svg ? <Svg source={PANEL_BG} alt="The Pokemon Center from FireRed and LeafGreen" width={1280} height={1664} /> : null}
-        </Box>
+        {Svg ? <Svg source={PANEL_HEAD} alt="The Pokemon Center counter from FireRed and LeafGreen" width={900} height={180} /> : null}
         {buttons}
         <Text color={PINK} bold>{'POKÉMON CENTER'}</Text>
         {card('STATUS', badge.color, badge.color, (
