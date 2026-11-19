@@ -42,7 +42,7 @@ That is the whole loop: plan, count, show. Because the bar only moves when real 
 - **One clear status.** Idle, Working on it, Waiting for your answer, Between steps, Finished, Stopped or Hit a problem. It says "Waiting for your answer" only when Claude actually asked you something, never as a guess.
 - **One trip per task.** The bar covers the whole task, however many steps or replies it takes. A reply ending does not finish it, and Claude extends it with `plan.py add` instead of starting over.
 - **A focus timer** with a Poke Ball beside it that rocks left and right while the time runs, like a catch, and goes still and dark when time is up. It drains as time passes and buzzes when it ends.
-- **A Pokemon Center look** (optional art, see below): the FireRed/LeafGreen Pokemon Center counter as a banner, cream and salmon colours to match, a row of Master Balls with one per step and a marker on the step you are on ("Step 2 of 5: Reading the page"), colourful Kanto gym badges for real work, a plain Poke Ball on the timer, and small pixel buttons.
+- **A Pokemon Center look** (optional art, see below): the FireRed/LeafGreen Pokemon Center counter as a banner, cream and salmon colours to match, a row of different balls with one per step, a Master Ball first and a marker on the step you are on ("Step 2 of 5: Reading the page"), colourful Kanto gym badges for real work, a plain Poke Ball on the timer, and small pixel buttons.
 - **A focus view** that hides everything except the current step.
 - **Recent activity and helpers**, so you can see what is running right now.
 

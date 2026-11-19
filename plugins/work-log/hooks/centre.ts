@@ -16,7 +16,7 @@ export const STATE_ITEM: Record<string, string> = {
 }
 
 // the balls of the games, in the order steps use them
-const STEP_BALLS = ['poke-ball', 'great-ball', 'ultra-ball', 'premier-ball', 'luxury-ball', 'dusk-ball']
+const STEP_BALLS = ['master-ball', 'great-ball', 'ultra-ball', 'premier-ball', 'luxury-ball', 'dusk-ball']
 
 // the timer is always the regular Poke Ball
 export const ballFor = (_mins: number) => 'poke-ball'
@@ -35,7 +35,7 @@ export const timerBall = (mode: 'run' | 'idle' | 'ended', ball: string) => {
   return VB(28, 24, `<g transform="translate(2 0)"${mode === 'ended' ? ' opacity=".5"' : ''}>${ART(ball)}</g>`)
 }
 
-// one Master Ball per step (up to 12). Finished steps are lit, the one being worked on is lit with a yellow marker under it, the rest are dim.
+// one ball per step (up to 12), a different kind each, starting with a Master Ball where the red Poke Ball used to be. Finished steps are lit, the one being worked on is lit with a yellow marker under it, the rest are dim.
 // It never moves or glows: it only counts and points.
 export const trayWidth = (total: number) => Math.min(12, Math.max(1, total)) * 20 + 4
 export const trayHeight = 30
@@ -45,7 +45,7 @@ export const healTray = (done: number, total: number, finished = false) => {
   const cur = finished ? -1 : Math.min(n - 1, lit)
   let body = ''
   for (let i = 0; i < n; i++) {
-    body += `<g transform="translate(${i * 20} 0)" opacity="${i < lit || i === cur ? 1 : 0.28}">${ART('master-ball')}</g>`
+    body += `<g transform="translate(${i * 20} 0)" opacity="${i < lit || i === cur ? 1 : 0.28}">${ART(STEP_BALLS[i % STEP_BALLS.length]!)}</g>`
     if (i === cur) body += `<path fill="#ffd54a" d="M${i * 20 + 9} 27h5v1h-5zM${i * 20 + 10} 26h3v1h-3zM${i * 20 + 11} 25h1v1h-1z"/>`
   }
   return VB(n * 20 + 4, trayHeight, body)
