@@ -1,50 +1,58 @@
-# claude-work-panel
-
 <p align="center">
   <img src="https://play.pokemonshowdown.com/sprites/gen4/lucario.png" height="64" alt="Lucario"> <img src="https://play.pokemonshowdown.com/sprites/gen5/blaziken-mega.png" height="64" alt="Mega Blaziken"> <img src="https://play.pokemonshowdown.com/sprites/gen3/charmander.png" height="64" alt="Charmander"> <img src="https://play.pokemonshowdown.com/sprites/gen4/alakazam.png" height="64" alt="Alakazam"> <img src="https://play.pokemonshowdown.com/sprites/gen4/gengar.png" height="64" alt="Gengar"><br>
   <img src="https://play.pokemonshowdown.com/sprites/itemicons/poke-ball.png" alt="Poke Ball"> <img src="https://play.pokemonshowdown.com/sprites/itemicons/great-ball.png" alt="Great Ball"> <img src="https://play.pokemonshowdown.com/sprites/itemicons/ultra-ball.png" alt="Ultra Ball"> <img src="https://play.pokemonshowdown.com/sprites/itemicons/master-ball.png" alt="Master Ball"> <img src="https://play.pokemonshowdown.com/sprites/itemicons/potion.png" alt="Potion"> <img src="https://play.pokemonshowdown.com/sprites/itemicons/rare-candy.png" alt="Rare Candy">
 </p>
 
-**See what your Claude is actually doing, instead of asking it for a status update.**
+# claude-work-panel
 
-Type `/work` in Claude Code and a live panel shows what Claude is doing right now, how far along it is, and what is left. You look at the panel. You stop typing "where are you at?" and "how long will this take?".
+**A live panel that shows what Claude Code is doing right now, so you can stop asking "where are you at?"**
 
-I have ADHD and kept losing track of what the agent was doing. A wall of tool output does not tell you how far along you are. A bar and a few real numbers do.
+Type `/work` and you see the plan, which step Claude is on, how much is done, and what it needs from you. It has a Pokémon Center theme if you want one, and a plain look if you don't.
 
-## Demo
+## In one minute
 
-![Demo of the /work panel](assets/demo.gif)
+- **The problem:** when Claude works on a long job, you can't see how far along it is. You ask. It guesses. You ask again.
+- **The fix:** Claude writes a short plan first and reports real counts as it goes. The panel shows them live.
+- **What you do:** nothing. Install it, type `/work`, and keep talking to Claude like always.
 
-## The problem
+I made this because I have ADHD and kept losing track of what the agent was doing. A wall of text does not tell you how far along you are. A bar and a few real numbers do. It is written to be easy to read at a glance, whether or not your brain works like mine.
 
-When Claude works on a long task, you are in the dark. To find out how it is going you have to interrupt it and ask. It answers with a guess, and the ETA is usually wrong. You ask again ten minutes later.
+## What it looks like
 
-## The fix
+![The /work panel with the Pokémon Center theme: counter banner, status with a row of balls, timer, badges and plan](assets/panel-preview.png)
 
-The progress lives on screen, not in a reply. You get control back: you can see the work, decide when to step in, and leave it alone the rest of the time.
+*A preview render built from the plugin's own art and colours. In the app it updates live.*
 
-## How it works, in plain words
+From top to bottom:
 
-1. **You give Claude a task.** Nothing else changes. You talk to it like always.
-2. **Claude makes a plan first.** Before it starts, it writes down the goal. If the job can be counted (105 emails, 40 files), it records the total. If it is bigger, it lists the phases.
-3. **Claude reports real numbers as it goes.** After each chunk of work it updates the count: `35 of 105 done`. These are counts of work finished, not a guess at time left.
-4. **The panel shows it live.** The bar fills from those counts. Underneath you see what Claude is doing this second, in plain words, like `Searching the web` or `Reading the page`.
-5. **You get one clear next step.** When Claude needs you, the panel shows a single "your move" line. Otherwise you can ignore it.
+| Part | What it tells you |
+|---|---|
+| **Status** | One plain label: Idle, Working on it, Waiting for your answer, Between steps, Finished, Stopped, or Hit a problem. |
+| **Bar and balls** | The bar fills from real finished work. The row of balls has one ball per step. Finished steps are lit and a yellow marker points at the step Claude is on. |
+| **Step line** | "Step 3 of 5: Building the panel." No guessing which step you are on. |
+| **Timer** | A Poké Ball that rocks while time runs and goes still when it ends. Good for "just start for 5 minutes". |
+| **Badges** | One Kanto gym badge for each task that was real work. The case resets every Monday. |
+| **Plan** | The full checklist, with a tick for done and an arrow at the current step. |
 
-That is the whole loop: plan, count, show. Because the bar only moves when real work is finished, you can trust it.
+## The theme
 
-## What you see
+The theme also changes the whole Claude window into a night scene from the Kanto games. This part is my own plugin and is not in this repo.
 
-- **A progress bar above your prompt for planned work.** It fills from real counts or finished steps, never from a guess. One-shot tasks like a quick reply or a short draft get no plan and no empty bar, just the line saying what Claude is doing.
-- **The numbers in plain words.** For a job like clearing an inbox: `35 of 105 threads done. 70 to go.` with found, picked, done and left alone listed under it.
-- **What Claude is doing right now, in plain words.** Not `mcp__claude-in-chrome__navigate`, but `Opening a page in Chrome`, `Searching the web  ·  4 web searches done`, `Reading the page in Chrome`, `Cleaning up email`. The pane keeps a running tally for the task: web searches done, pages read, files changed, commands run.
-- **A phase checklist for bigger jobs**, with the current step glowing and a "your move" line for the one thing you can do next.
-- **One clear status.** Idle, Working on it, Waiting for your answer, Between steps, Finished, Stopped or Hit a problem. It says "Waiting for your answer" only when Claude actually asked you something, never as a guess.
-- **One trip per task.** The bar covers the whole task, however many steps or replies it takes. A reply ending does not finish it, and Claude extends it with `plan.py add` instead of starting over.
-- **A focus timer** with a Poke Ball beside it that rocks left and right while the time runs, like a catch, and goes still and dark when time is up. It drains as time passes and buzzes when it ends.
-- **A Pokemon Center look** (optional art, see below): the FireRed/LeafGreen Pokemon Center counter as a banner, cream and salmon colours to match, a row of different balls with one per step, a Master Ball first and a marker on the step you are on ("Step 2 of 5: Reading the page"), colourful Kanto gym badges for real work, a plain Poke Ball on the timer, and small pixel buttons.
-- **A focus view** that hides everything except the current step.
-- **Recent activity and helpers**, so you can see what is running right now.
+![Pokémon Center](assets/theme-center.png)
+![Viridian Forest at night](assets/theme-forest.png)
+![The S.S. Anne harbor at night](assets/theme-harbor.png)
+
+## How it works
+
+1. **You give Claude a task.** Nothing changes for you.
+2. **Claude plans first.** If the job can be counted (105 emails), it records the total. If it is bigger, it lists the steps.
+3. **Claude reports real numbers.** After each chunk it updates the count, like `35 of 105 done`. These are counts of finished work, never a guess at time left.
+4. **The panel shows it live.** The bar fills from those counts, and a line says what Claude is doing this second, like `Searching the web` or `Reading the page`.
+5. **When Claude needs you, it says so once.** You see "Waiting for your answer" and one line about what it needs. Otherwise you can ignore the panel.
+
+The bar covers the whole task, however many steps or replies it takes. It never restarts partway.
+
+Small tasks (a quick answer, a short edit) get no plan and no empty bar.
 
 ## Install
 
@@ -53,13 +61,11 @@ That is the whole loop: plan, count, show. Because the bar only moves when real 
 /plugin install work-log@claude-work-panel
 ```
 
-Then run `/reload-plugins` and `/work`. That is all. The plugin copies its helper script into `~/.claude/adhd-progress/` on session start and adds a short rule to Claude's system prompt, so Claude starts a plan at the beginning of every task without you editing any file.
+Then run `/reload-plugins` and `/work`. The plugin copies its helper script into `~/.claude/adhd-progress/` and adds a short rule to Claude's system prompt, so you don't edit any file. You need Python 3 on your PATH.
 
-You need Python 3 on your PATH.
+## The commands Claude runs
 
-## How it works
-
-Claude runs `plan.py` at the start of work that has a countable total or three or more steps, and keeps the numbers current. Small tasks are not planned. The panel reads the result from `~/.claude/adhd-progress/plan.json`.
+You don't type these. Claude does. They are listed so you can see what it is doing.
 
 ```
 python plan.py work "Clear junk emails" 105 threads   # counted job, bar is done / total
@@ -69,27 +75,25 @@ python plan.py new "Goal" "Phase 1" "Phase 2"         # bigger job with a checkl
 python plan.py next "what just got done"              # finish a phase
 python plan.py add "Another phase"                    # more steps for the same task, the bar keeps going
 python plan.py earns "what you shipped"               # this task earns a gym badge (real work only)
-python plan.py done "what got done"                   # the whole task is finished
 python plan.py you "the one thing you could do"       # your move
+python plan.py done "what got done"                   # the whole task is finished
 ```
 
-## The Pokemon theme and the art
+## Art and the Pokémon theme
 
-The panel works out of the box with neutral stand-in art (a plain ball, plain badges, a dark floor). The Pokemon look uses Nintendo and Game Freak art, which is not in this repo and should not be published. To get it for yourself, put your own copies in `plugins/work-log/assets/` (ignored by git) and run the generators in `plugins/work-log/tools/`:
+The panel works out of the box with plain stand-in art. The Pokémon look uses Nintendo and Game Freak art, which is not stored in this repo. To build it for yourself, put your own copies in `plugins/work-log/assets/` (git ignores it) and run the scripts in `plugins/work-log/tools/`:
 
 - `make_sprites.py` cuts the 8 Kanto badges from a Trainer Card sheet and tints them in their game colours.
-- `make_items.py` turns 24 by 24 item icons (Poke Balls and bag items) into vector pixel art.
-- `make_panelbg.py` builds the panel background from the FireRed/LeafGreen Pokemon Center map.
+- `make_items.py` turns 24 by 24 item icons into vector pixel art.
+- `make_panelbg.py` builds the banner from the FireRed and LeafGreen Pokémon Center map.
 
-Each script says which file it expects at the top. Keep the generated files for private use.
+Each script says which file it expects at the top. Keep the generated files private. The Pokémon and item pictures at the top are loaded from [Pokémon Showdown](https://play.pokemonshowdown.com/sprites/), and the preview images show the game art. Pokémon belongs to Nintendo, Game Freak and Creatures. This is an unofficial fan theme with no affiliation.
 
 ## Limits
 
-- Tested on Windows 11 with Claude Code 2.1.289 only. Colours, buttons and the animated ball are checked in the desktop app on Windows. The panel should work elsewhere, but the timer buzz uses PowerShell, so it is silent on macOS and Linux.
+- Tested on Windows 11 with Claude Code 2.1.289 only. The timer buzz uses PowerShell, so it is silent on macOS and Linux.
 - To use your own sound, put a `buzz.wav` or `buzz.mp3` in `~/.claude/adhd-progress/`. Without one you get the Windows alert.
 - Early software. The plugin API it uses is new, so expect rough edges. Issues and PRs welcome.
 - This is a focus aid, not medical advice or treatment.
 
 MIT licensed.
-
-The Pokemon and item pictures above are loaded from [Pokemon Showdown](https://play.pokemonshowdown.com/sprites/), not stored here. Pokemon and its art belong to Nintendo, Game Freak and Creatures. This is an unofficial fan theme with no affiliation.
