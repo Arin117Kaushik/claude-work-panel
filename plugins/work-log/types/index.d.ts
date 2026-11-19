@@ -1,8 +1,10 @@
 export type Job = { name: string; state: string; detail: string }
 export type Progress = { percent: number; label: string; jobs?: Job[] }
-export type Phase = { name: string; state: 'done' | 'doing' | 'todo'; note?: string; since?: number }
+export type Phase = { name: string; state: 'done' | 'doing' | 'todo'; note?: string; since?: number; took?: number }
 export type Stat = { label: string; value: string | number }
-export type Plan = { goal: string; phases: Phase[]; total?: number; done?: number; unit?: string; stats?: Stat[]; win?: string; you?: string; updated?: number; session?: string; tasksDone?: number }
+export type Plan = { goal: string; phases: Phase[]; total?: number; done?: number; unit?: string; stats?: Stat[]; win?: string; you?: string; updated?: number; session?: string; tasksDone?: number; status?: 'working' | 'waiting' | 'paused' | 'done'; reason?: string; startedAt?: number; finishedAt?: number; earns?: string }
+export type Live = { state: 'idle' | 'working' | 'waiting' | 'paused' | 'done' | 'stopped' | 'problem'; reason: string; guess: boolean; at: number }
+export type Badges = { week: string; count: number; log?: { goal: string; result: string; date: string }[] }
 export type Event = { at: number; who: string; tool: string; detail: string }
 export type AgentRow = { id: string; type: string; description: string; status: string }
 export type Activity = { tool: string; detail: string; count: number }
@@ -16,9 +18,11 @@ declare module 'claude-code' {
       activity: Record<string, Activity>
       feed: Event[]
       cleared: string[]
-      timer: { mins: number; endsAt: number | null; now: number }
+      timer: { mins: number; endsAt: number | null; now: number; over?: boolean }
       tally: { counts: Record<string, number>; now: { text: string; kind: string; detail: string } | null }
       focus: boolean
+      live: Live
+      badges: Badges
     }
   }
 }

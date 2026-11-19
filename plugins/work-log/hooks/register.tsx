@@ -1,21 +1,27 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
+import { CASE_H, CASE_W, badgeCase } from './badgecase'
+import { STATE_ITEM, ballFor, healTray, icon, timerBall, trayWidth } from './centre'
+import { PANEL_BG } from './panelbg'
+import { BADGE_NAMES } from './sprites'
 import { countLine, tallyLines, words } from './words'
-import type { Activity, AgentRow, Plan, Progress } from '../types'
+import type { Activity, AgentRow, Badges, Live, Plan, Progress } from '../types'
 
 // data lives in ~/.claude/adhd-progress, under the user's home folder
 const dir = async ($: { env: { get: (n: string) => Promise<string | undefined> } }) =>
   ((await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? '').replace(/\\/g, '/') + '/.claude/adhd-progress/'
 // progress.json is optional (background jobs strip); plan.json is written by plan.py; buzz.ps1 plays buzz.wav or buzz.mp3 beside it, else the Windows alert
 const PANE = 'work-log'
-const SCRIPTS = ['plan.py', 'buzz.ps1'] // shipped in ./scripts, copied to the data folder on every session start
+const SCRIPTS = ['plan.py', 'buzz.ps1'] // shipped in ./scripts; copied only when missing or older, so local edits survive
+const VERSION = /work-log script version: (\d+)/
 
 // added to the system prompt so Claude feeds the panel without the user editing CLAUDE.md
 const planRule = (d: string) => `The user watches a live progress panel (/work) fed by ${d}plan.py. Plan only work that has real structure. Skip the plan for one-shot work: a single reply, writing or editing a short piece, answering a question, one lookup, a small fix. For those, run nothing. When a task has a countable total or three or more distinct steps, run exactly one of these before other work:
 python "${d}plan.py" work "goal" TOTAL unit   (a countable job: emails, files, rows)
 python "${d}plan.py" new "goal" "phase 1" "phase 2"   (a bigger job with steps)
-While working, report real numbers: plan.py did N, plan.py stat "Label" value (found, done, left alone). Run plan.py next "what got done" as phases finish and plan.py you "text" for the one step the user should take. A new task means a new plan. Name phases and describe work in plain action words a stranger would understand, like Searching the web, Reading the page, Drafting the post, Checking the draft. The panel counts searches, pages read and files changed by itself, so do not report those with stat. Keep the words short and plain.`
+The bar is ONE trip for the whole task, however many steps or replies it takes. If a plan is already running and the work continues or grows, run plan.py add "phase" to extend it. Never run new for the next step of the same task; new is only for an unrelated task.
+While working, report real numbers: plan.py did N, plan.py stat "Label" value (found, done, left alone). Run plan.py next "what got done" as each phase finishes, never batch them at the end. When the whole task is finished, run plan.py done "what got done" so nothing is left showing as unfinished. When you need the user to answer or approve something, run plan.py you "what you need" before asking, and plan.py go once they have replied. A gym badge is earned only for real work. Run plan.py earns "the concrete result" before finishing a task ONLY when all three are true: it moves a real goal (job hunt, client or paid work, a skill shown in a shipped project, a health habit done), it produced a concrete result you can point to (something sent, shipped, finished or completed), and it took real effort (3 or more steps, or about 20 or more minutes of work). Never for chores or utility jobs (cleaning a drive, sorting files), meetings attended, reading, or a task made up just to tick it. You decide, not the user. A new task means a new plan. Name phases and describe work in plain action words a stranger would understand, like Searching the web, Reading the page, Drafting the post, Checking the draft. The panel counts searches, pages read and files changed by itself, so do not report those with stat. Keep the words short and plain.`
 
 const CELLS = 40
 
@@ -28,6 +34,8 @@ const cleared = atom({ plugin: 'work-log', key: 'cleared' } as const, [])
 const timer = atom({ plugin: 'work-log', key: 'timer' } as const, { mins: 5, endsAt: null, now: 0 })
 const tally = atom({ plugin: 'work-log', key: 'tally' } as const, { counts: {}, now: null })
 const focus = atom({ plugin: 'work-log', key: 'focus' } as const, false)
+const live = atom({ plugin: 'work-log', key: 'live' } as const, { state: 'idle', reason: '', guess: false, at: 0 })
+const badges = atom({ plugin: 'work-log', key: 'badges' } as const, { week: '', count: 0 })
 
 const mix = (a: number[], b: number[], t: number) =>
   '#' + a.map((x, i) => Math.round(x + (b[i]! - x) * t).toString(16).padStart(2, '0')).join('')
@@ -50,6 +58,13 @@ const WIN = '#e8b86d'
 const ACCENT = '#8fd8f0'
 const GREY = '#6b6f6c'
 const RED = '#ff5f5f'
+const AMBER = '#ffb347'
+const GREEN = '#5fd38d'
+const PINK = '#f4a6b8' // Pokemon Center counter pink
+const ROSE = '#8c4a62'
+const CARD_LINE = '#f4a6b8' // one trim colour for every card, the Pokemon Center pink
+const ORANGE = '#ff8c42'
+const VIOLET = '#b79cff'
 
 type Kind = 'done' | 'running' | 'bad' | 'idle'
 const kindOf = (s: string): Kind =>
@@ -62,18 +77,43 @@ const WORDS: Record<string, string> = { running: 'working on it', done: 'finishe
 const say = (s: string) => WORDS[s] ?? s
 
 // two kinds of plan: a counted job (total and done, like "35 of 105 threads") or phases.
-// Phases done count fully, the one in progress counts half, so the bar moves as soon as work starts.
+// base is the honest fraction; the bar creeps from base toward next while a step runs (see bar.tsx).
+// percent is the static fallback where no surface module can draw: a running step counts half.
 const progressOf = (pl: Plan) => {
   if (pl.total) {
     const done = Math.min(pl.done ?? 0, pl.total)
-    return { done, total: pl.total, doing: -1, now: null, unit: pl.unit ?? 'items', percent: (done / pl.total) * 100 }
+    const base = (done / pl.total) * 100
+    return { done, total: pl.total, doing: -1, now: null, unit: pl.unit ?? 'items', base, next: base, since: 0, tau: 120, percent: base, upNext: null }
   }
   const total = pl.phases.length
   if (!total) return null
   const done = pl.phases.filter(x => x.state === 'done').length
   const doing = pl.phases.findIndex(x => x.state === 'doing')
-  return { done, total, doing, now: doing >= 0 ? pl.phases[doing]! : null, unit: 'steps', percent: ((done + (doing >= 0 ? 0.5 : 0)) / total) * 100 }
+  const took = pl.phases.filter(x => x.took).map(x => x.took!)
+  const tau = took.length ? Math.max(20, Math.min(600, took.reduce((a, b) => a + b, 0) / took.length)) : 120
+  const base = (done / total) * 100
+  const upNext = pl.phases.find((x, i) => x.state === 'todo' && i > doing) ?? null
+  return { done, total, doing, now: doing >= 0 ? pl.phases[doing]! : null, unit: 'steps', base, next: ((done + 1) / total) * 100, since: doing >= 0 ? pl.phases[doing]!.since ?? 0 : 0, tau, percent: ((done + (doing >= 0 ? 0.5 : 0)) / total) * 100, upNext }
 }
+
+// the one label that says what the work is doing: the plan file is the truth when there is a plan
+const BADGE: Record<string, { dot: string; label: string; color: string; bar: string }> = {
+  idle: { dot: '○', label: 'Idle', color: GREY, bar: 'stopped' },
+  working: { dot: '●', label: 'Working on it', color: VIOLET, bar: 'working' },
+  waiting: { dot: '●', label: 'Waiting for your answer', color: AMBER, bar: 'waiting' },
+  paused: { dot: '●', label: 'Between steps', color: '#9aa0a6', bar: 'stopped' },
+  done: { dot: '●', label: 'Finished', color: GREEN, bar: 'done' },
+  stopped: { dot: '●', label: 'Stopped', color: '#9aa0a6', bar: 'stopped' },
+  problem: { dot: '●', label: 'Hit a problem', color: RED, bar: 'problem' },
+}
+const statusOf = (pl: Plan | null, lv: Live) => {
+  const newer = lv.at > (pl?.updated ?? 0) * 1000
+  const key = (lv.state === 'stopped' || lv.state === 'problem') && newer ? lv.state : (pl?.status ?? lv.state)
+  return { key, reason: newer ? lv.reason : pl?.reason ?? lv.reason, ...BADGE[key]! }
+}
+const hhmm = (sec: number) => new Date(sec * 1000).toTimeString().slice(0, 5)
+const minsText = (sec: number) => (sec < 90 ? `${Math.max(1, Math.round(sec))} sec` : `${Math.round(sec / 60)} min`)
+const mondayOf = () => { const d = new Date(Date.now() - ((new Date().getDay() + 6) % 7) * 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
 const mmss = (ms: number) => `${Math.floor(Math.max(0, ms) / 60000)}:${String(Math.floor(Math.max(0, ms) / 1000) % 60).padStart(2, '0')}`
 
@@ -85,17 +125,56 @@ const detailOf = (e: Record<string, unknown>) => {
   return ''
 }
 
+const planFile = async ($: EngineInterface) => `${await dir($)}plans/${await $.session.id()}.json`
+const readPlan = async ($: EngineInterface): Promise<Plan | null> => {
+  try {
+    return JSON.parse(await $.fs.read(await planFile($)))
+  } catch {
+    return null // no plan yet, or half-written: the caller keeps what it had
+  }
+}
+
+// what the work is doing right now. Kept in the live atom, and written into the plan file when there is one,
+// so the file never keeps saying "working" about a task that has ended.
+const setLive = async ($: EngineInterface, state: Live['state'], reason = '', guess = false) => {
+  const cur = await read($, live)
+  if (cur.state === state && cur.reason === reason && cur.guess === guess) return
+  await update($, live, () => ({ state, reason, guess, at: Date.now() }))
+  if (guess) return // a guess never reaches the file
+  const pl = await readPlan($)
+  if (!pl || (pl.status === 'done' && state !== 'working')) return
+  if (state === 'done') {
+    const d = await dir($)
+    await $.process.run(['python', `${d}plan.py`, '--session', await $.session.id(), 'done'], { timeoutMs: 8000 }).catch(() => null)
+    return
+  }
+  if (pl.status === 'done') return
+  if (state === 'working' || state === 'waiting' || state === 'paused') {
+    pl.status = state
+    if (reason) pl.reason = reason
+    else delete pl.reason
+    await $.fs.write(await planFile($), JSON.stringify(pl, null, 2))
+  }
+}
+
 export const register: Register = on => {
   let endsAt: number | null = null // the live deadline; the timer atom mirrors it for drawing
-  let sessionStart = 0 // an unstamped plan older than this belongs to an earlier chat and stays hidden
   let hideBefore = 0 // a plan finished before this is not shown against the next, unplanned task
+  let lastTool = ''
+  let asked = '' // the question Claude put in its wrap-up, if any: the turn then ends waiting on the user
 
   on('session.start', async ($, e, next) => {
-    sessionStart = await $.clock.now()
     const d = await dir($)
     for (const f of SCRIPTS) {
       try {
-        await $.fs.write(d + f, await $.fs.read(`${$.plugin.root}/scripts/${f}`))
+        const shipped = await $.fs.read(`${$.plugin.root}/scripts/${f}`)
+        let have = -1 // -1: not there yet
+        try {
+          have = Number(VERSION.exec(await $.fs.read(d + f))?.[1] ?? 0)
+        } catch {
+          // missing
+        }
+        if (have < Number(VERSION.exec(shipped)?.[1] ?? 0) || have === -1) await $.fs.write(d + f, shipped)
       } catch {
         // shipped copy missing: leave whatever the user already has
       }
@@ -104,28 +183,34 @@ export const register: Register = on => {
 
     const poll = async () => {
       try {
-        const p: Progress = JSON.parse(await $.fs.read((await dir($)) + 'progress.json'))
+        const p: Progress = JSON.parse(await $.fs.read(d + 'progress.json'))
         await update($, progress, () => p)
       } catch {
         // file missing or half-written: keep the last value
       }
-      try {
-        const pl: Plan = JSON.parse(await $.fs.read((await dir($)) + 'plan.json'))
-        // plan.json is one file shared by every chat on the machine: show it only if this chat wrote it
-        const mine = pl.session ? pl.session === (await $.session.id()) : (pl.updated ?? 0) * 1000 >= sessionStart
-        const fresh = mine && ((pl.updated ?? 0) + 1) * 1000 > hideBefore // +1s: plan.json stores whole seconds
+      const pl = await readPlan($)
+      if (pl) {
+        const fresh = ((pl.updated ?? 0) + 1) * 1000 > hideBefore // +1s: plan.py stores whole seconds
         await update($, plan, () => (fresh ? pl : null))
-      } catch {
-        // no plan yet: the panel falls back to the plain progress bar
       }
-      const list = await $.agent.list()
-      const rows: AgentRow[] = list.map(a => ({ id: a.id, type: a.type, description: a.description, status: a.status }))
-      await update($, agents, () => rows)
+      try {
+        const bg: Badges = JSON.parse(await $.fs.read(d + 'badges.json'))
+        await update($, badges, () => bg)
+      } catch {
+        // no badges yet
+      }
+      try {
+        const list = await $.agent.list()
+        const rows: AgentRow[] = list.map(a => ({ id: a.id, type: a.type, description: a.description, status: a.status }))
+        await update($, agents, () => rows)
+      } catch {
+        // the agent list is not ready: keep the last rows, try again in 2 seconds
+      }
     }
     await poll()
     $.clock.every(2000, poll)
 
-    // timer: once a second, redraw the countdown and ring at the deadline
+    // once a second: the timer's countdown
     $.clock.every(1000, async () => {
       if (endsAt === null) return
       const now = await $.clock.now()
@@ -134,24 +219,26 @@ export const register: Register = on => {
         return
       }
       endsAt = null
-      await update($, timer, x => ({ ...x, endsAt: null }))
+      await update($, timer, x => ({ ...x, endsAt: null, over: true }))
       $.ui.toast('Time is up. You can stop now, or keep going.')
-      const buzz = await $.process.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (await dir($)) + 'buzz.ps1'], { timeoutMs: 20000 }).catch(() => null)
+      const buzz = await $.process.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', d + 'buzz.ps1'], { timeoutMs: 20000 }).catch(() => null)
       if (!buzz || buzz.exitCode !== 0) $.ui.toast('Timer sound failed to play. Is buzz.ps1 in ~/.claude/adhd-progress?')
     })
-
 
     return next(e)
   })
 
-  // /clear fires no session.start: the process goes on under a new session id, so the old plan is dropped here
+  // /clear fires no session.start: the process goes on under a new session id, so the old plan, tally and timer are dropped here
   on('session.end', async ($, e, next) => {
-    sessionStart = await $.clock.now()
+    endsAt = null
+    lastTool = ''
+    await update($, timer, x => ({ ...x, endsAt: null }))
     await update($, plan, () => null)
     await update($, feed, () => [])
     await update($, activity, () => ({}))
     await update($, tally, () => ({ counts: {}, now: null }))
     await update($, cleared, () => [])
+    await update($, live, () => ({ state: 'idle', reason: '', guess: false, at: Date.now() }))
     return next(e)
   })
 
@@ -175,16 +262,43 @@ export const register: Register = on => {
       await update($, plan, () => null)
     }
     await update($, tally, () => ({ counts: {}, now: null }))
+    lastTool = ''
+    asked = ''
+    await setLive($, 'working')
     return next(e)
   })
 
+  // the end of the main reply is where "done", "waiting on you" and "stopped" get decided, so nothing stays on "working"
   on('turn.complete', async ($, e, next) => {
-    if (!e.agentId) await update($, tally, t => ({ ...t, now: null }))
+    if (!e.agentId) {
+      await update($, tally, t => ({ ...t, now: null }))
+      const pl = await readPlan($)
+      if (e.reason === 'aborted') await setLive($, 'stopped', 'you interrupted it')
+      else if (e.reason === 'error') await setLive($, 'problem', 'an error ended the turn')
+      else if (e.reason === 'refusal') await setLive($, 'problem', 'the model declined to continue')
+      else if (pl?.you || asked || lastTool === 'AskUserQuestion') await setLive($, 'waiting', pl?.you ?? (asked || 'it asked you a question'))
+      // the trip belongs to the whole task: a reply ending does not finish it. Only plan.py done (or the last step) does.
+      else if (pl && pl.status !== 'done' && pl.phases.some(x => x.state !== 'done')) await setLive($, 'paused')
+      else await setLive($, pl ? 'done' : 'idle')
+      lastTool = ''
+      asked = ''
+    }
     return next(e)
+  })
+
+  // streams: every model step means it is working again
+  on('turn.step', async function* ($, e, next) {
+    await setLive($, 'working')
+    return yield* next(e)
   })
 
   on('tool.call', async ($, e, next) => {
     const key = e.agentId ?? 'main'
+    if (!e.agentId) {
+      lastTool = e.tool
+      if (e.tool.endsWith('wrap_up')) asked = String((e as Record<string, unknown>).ask ?? '')
+      await setLive($, e.tool === 'AskUserQuestion' ? 'waiting' : 'working', e.tool === 'AskUserQuestion' ? 'it asked you a question' : '')
+    }
     const detail = detailOf(e as Record<string, unknown>)
     await update($, activity, all => {
       const prev: Activity | undefined = all[key]
@@ -198,28 +312,42 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // the bar and the status chip. Where no surface module can draw (the phone), the bar falls back to plain cells.
+  const barProps = (st: NonNullable<ReturnType<typeof progressOf>>, mode: string, cells: number) => ({
+    target: st.base, cells, mode, next: st.next, since: st.since, tau: st.tau,
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const staticBar = (Text: any, pct: number, cells: number, spread = cells) =>
+    Array.from({ length: cells }, (_, i) => <Text key={i} color={i < Math.round((pct / 100) * cells) ? shade(i, spread) : '#2a2c33'}>■</Text>)
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const p = await read($, progress)
     const pl = await read($, plan)
     const tm = await read($, timer)
     const ty = await read($, tally)
+    const lv = await read($, live)
     const st = pl ? progressOf(pl) : null
 
     if (e.props.hasSurvey) {
       return next(e)
     }
 
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const pct = Math.max(0, Math.min(100, st ? st.percent : 0))
-    const filled = Math.round((pct / 100) * CELLS)
+    const els = $.ui.resolve(e)
+    const { Box, Button, Text } = els
+    const Client = 'Client' in els ? els.Client : null
     const c = ty.now ? countLine(ty.now.kind, ty.counts[ty.now.kind] ?? 0) : ''
+    const badge = statusOf(pl, lv)
+    const chip = <Text color={badge.color} bold>{`${badge.dot} ${badge.label}`}</Text>
+    const why = badge.reason && (badge.key === 'waiting' || badge.key === 'stopped' || badge.key === 'problem')
+      ? <Text color={badge.color}>{`  ${badge.reason}`}</Text> : null
 
-    // no plan means a one-shot task: no bar to fake, just what is happening right now (and the timer if it runs)
+    // no plan means a one-shot task: no bar to fake, just the status and what is happening right now (and the timer if it runs)
     if (!st) {
-      if (!ty.now && tm.endsAt === null) return next(e)
+      if (!why && !(badge.key === 'working' && ty.now) && tm.endsAt === null) return next(e)
       return (
         <Box>
-          {ty.now && <Text color={GREY}>{`${ty.now.text}${c ? '  ·  ' + c : ''}`}</Text>}
+          {chip}
+          {why}
+          {badge.key === 'working' && ty.now && <Text color={GREY}>{`  ${ty.now.text}${c ? '  ·  ' + c : ''}`}</Text>}
           {tm.endsAt !== null && <Text color={WIN} bold>{`  TIMER ${mmss(tm.endsAt - tm.now)} `}</Text>}
           <Button key="open" label="details" onPress={() => $.ui.open({ id: PANE, title: 'Work' })} />
         </Box>
@@ -229,23 +357,29 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Box>
-          {Array.from({ length: CELLS }, (_, i) => (
-            <Text key={i} color={i < filled ? shade(i) : '#2a2c33'}>■</Text>
-          ))}
-          <Text color={ACCENT} bold>{` ${st.done} of ${st.total} ${st.unit} done`}</Text>
-          {st.now && <Text color="#b79cff">{`  now: ${st.now.name} `}</Text>}
-          {tm.endsAt !== null && <Text color={WIN} bold>{`  TIMER ${mmss(tm.endsAt - tm.now)} `}</Text>}
+          {Client
+            ? <Box width={CELLS + 6} height={1}><Client key="bar" module="./bar.tsx" props={barProps(st, badge.bar, CELLS)} /></Box>
+            : <Box>{staticBar(Text, badge.key === 'done' ? 100 : st.percent, CELLS)}<Text color={ACCENT} bold>{` ${Math.round(badge.key === 'done' ? 100 : st.percent)}%`}</Text></Box>}
+          <Text>{'  '}</Text>
+          <Box flexShrink={0}>{chip}</Box>
+          <Box flexShrink={0}><Text color={ACCENT} bold>{`  ${st.done} of ${st.total} ${st.unit}  `}</Text></Box>
+          {tm.endsAt !== null && <Box flexShrink={0}><Text color={WIN} bold>{`TIMER ${mmss(tm.endsAt - tm.now)}  `}</Text></Box>}
           <Button key="open" label="details" onPress={() => $.ui.open({ id: PANE, title: 'Work' })} />
         </Box>
-        {ty.now && <Text color={GREY}>{`${ty.now.text}${c ? '  ·  ' + c : ''}`}</Text>}
+        {(badge.key === 'working' && st.now) || why
+          ? <Text wrap="truncate-end" color={badge.key === 'working' ? VIOLET : badge.color}>{badge.key === 'working' && st.now ? `now: ${st.now.name}` : badge.reason}</Text>
+          : null}
+        {badge.key === 'working' && ty.now && <Text wrap="truncate-end" color={GREY}>{`${ty.now.text}${c ? '  ·  ' + c : ''}`}</Text>}
+        {badge.key === 'done' && pl?.win && <Text color={GREEN}>{`Done: ${pl.win}`}</Text>}
       </Box>
     )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
     const els = $.ui.resolve(e)
+    const { Box, Button, Text } = els
     const Client = 'Client' in els ? els.Client : null // only the terminal and desktop draw surface modules
+    const Svg = 'Svg' in els ? els.Svg : null // the desktop draws vector art
     const p = await read($, progress)
     const pl = await read($, plan)
     const gone = await read($, cleared)
@@ -255,6 +389,8 @@ export const register: Register = on => {
     const act = await read($, activity)
     const events = await read($, feed)
     const ty = await read($, tally)
+    const lv = await read($, live)
+    const bg = await read($, badges)
     const now = await $.clock.now()
     const t = now / 1000
     const rows = e.viewport?.rows ?? 30
@@ -265,8 +401,8 @@ export const register: Register = on => {
     const order = (s: string) => ({ running: 0, bad: 1, idle: 2, done: 3 })[kindOf(s)]
     const shown = [...list].sort((a, b) => order(a.status) - order(b.status)).slice(0, room)
     const st = pl ? progressOf(pl) : null
-    const pct = Math.max(0, Math.min(100, st ? st.percent : 0))
-    const filled = Math.round((pct / 100) * 30)
+    const badge = statusOf(pl, lv)
+    const finished = badge.key === 'done'
 
     // the glow animates in glow.tsx on the display's frame clock, not through this hook
     const glow = (name: string) => Client
@@ -279,7 +415,7 @@ export const register: Register = on => {
       return (
         <Box key={key}>
           {k === 'running' ? glow(name) : <Text color={color}>{`${k === 'done' ? '✓' : k === 'bad' ? '✗' : '□'} ${name}`}</Text>}
-          <Text color={k === 'running' ? '#b79cff' : color} dimColor={k === 'idle'}>{`  ${detail}`}</Text>
+          <Text color={k === 'running' ? VIOLET : color} dimColor={k === 'idle'}>{`  ${detail}`}</Text>
         </Box>
       )
     }
@@ -288,137 +424,190 @@ export const register: Register = on => {
     const startTimer = async () => {
       const n = await $.clock.now()
       endsAt = n + tm.mins * 60000
-      await update($, timer, x => ({ ...x, endsAt, now: n }))
+      await update($, timer, x => ({ ...x, endsAt, now: n, over: false }))
     }
     const stopTimer = async () => {
       endsAt = null
-      await update($, timer, x => ({ ...x, endsAt: null }))
+      await update($, timer, x => ({ ...x, endsAt: null, over: false }))
     }
     const bump = (d: number) => update($, timer, x => ({ ...x, mins: Math.max(1, Math.min(90, x.mins + d)) }))
+    // pixel buttons: a thin frame on a themed fill, brighter under the pointer. Ice, lightning and fire for the three legendary birds.
+    const pix = (key: string, label: string, fill: string, ink: string, lift: string, onPress: () => void) => (
+      <Box key={`px-${key}`} borderStyle="single" borderColor={ink} backgroundColor={fill} paddingX={2} marginRight={1} hover={{ borderColor: '#ffffff', backgroundColor: lift }}>
+        <Button key={key} plain label={label.toUpperCase()} hover={{ color: ink }} onPress={onPress} />
+      </Box>
+    )
     const buttons = (
       <Box>
-        <Button key="focus" label={focusOn ? 'full view' : 'focus'} onPress={() => update($, focus, f => !f)} />
-        <Text>{'  '}</Text>
-        <Button key="clear" label="clear" onPress={async () => {
+        {pix('focus', focusOn ? 'full view' : 'focus', '#bfe6ff', '#12385a', '#e6f6ff', () => update($, focus, f => !f))}
+        {pix('clear', 'clear', '#ffe14a', '#4a3200', '#fff29a', async () => {
           await update($, feed, () => [])
           await update($, activity, () => ({}))
           await update($, cleared, () => [...gone, ...list.map(a => a.id)])
-        }} />
-        <Text>{'  '}</Text>
-        <Button key="close" label="close" onPress={() => $.ui.close({ id: PANE })} />
+        })}
+        {pix('close', 'close', '#e8472b', '#fff1d8', '#ff7a3c', () => $.ui.close({ id: PANE }))}
       </Box>
     )
     const TW = 30
-    const timerRow = tm.endsAt !== null ? (
-      <Box flexDirection="column" borderStyle="round" borderColor={WIN} paddingX={1}>
-        <Text color={WIN} bold>{`TIMER   ${mmss(left)} left`}</Text>
+    const LINE = CARD_LINE // one border colour for every card, so only status and the running timer ever stand out
+    const MUTED = '#8b8f98'
+    // one card style for everything on the panel: round border, a bold title, content below, one blank line between
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const card = (title: string, titleColor: string, border: string, children: any, item?: string) => (
+      <Box key={title} flexDirection="column" borderStyle="round" borderColor={CARD_LINE} paddingX={1} marginTop={1}>
         <Box>
-          {Array.from({ length: TW }, (_, i) => (
-            <Text key={i} color={i < Math.ceil((left / (tm.mins * 60000)) * TW) ? WIN : '#2a2c33'}>■</Text>
-          ))}
+          {Svg && item && <Svg source={icon(item)} alt={`${title} icon`} width={20} height={20} />}
+          <Text color={titleColor} bold>{`${Svg && item ? ' ' : ''}${title}`}</Text>
         </Box>
-        <Button key="stop" label="stop" onPress={stopTimer} />
-      </Box>
-    ) : (
-      <Box flexDirection="column" borderStyle="round" borderColor={ACCENT} paddingX={1}>
-        <Text color={ACCENT} bold>{`TIMER   ${tm.mins} min`}</Text>
-        <Box>
-          <Button key="less" label="-" onPress={() => bump(tm.mins <= 10 ? -1 : -5)} />
-          <Text>{'  '}</Text>
-          <Button key="more" label="+" onPress={() => bump(tm.mins < 10 ? 1 : 5)} />
-          <Text>{'  '}</Text>
-          <Button key="start" label="start" onPress={startTimer} />
-        </Box>
+        {children}
       </Box>
     )
+    const running = tm.endsAt !== null
+    const over = !running && !!tm.over
+    const ball = (mode: 'run' | 'idle' | 'ended') => (Svg ? <Svg source={timerBall(mode, ballFor(tm.mins))} alt={mode === 'run' ? 'Poke Ball rocking while the timer runs' : 'Poke Ball timer'} width={34} height={30} isInteractive={mode === 'run'} /> : null)
+    const controls = (
+      <Box>
+        {pix('less', '-', '#c9ccd6', '#20222c', '#eceef5', () => bump(tm.mins <= 10 ? -1 : -5))}
+        {pix('more', '+', '#c9ccd6', '#20222c', '#eceef5', () => bump(tm.mins < 10 ? 1 : 5))}
+        {pix('start', 'start', '#58d878', '#0c3a1a', '#8af0a4', startTimer)}
+      </Box>
+    )
+    const timerRow = card('TIMER', PINK, LINE, running ? (
+      <Box flexDirection="column">
+        <Box>{ball('run')}<Text color="#ff8a7a" bold>{` ${mmss(left)} left`}</Text></Box>
+        <Box>
+          {Array.from({ length: TW }, (_, i) => (
+            <Text key={i} color={i < Math.ceil((left / (tm.mins * 60000)) * TW) ? '#ff6a5a' : '#2a2c33'}>■</Text>
+          ))}
+        </Box>
+        <Box>{pix('stop', 'stop', '#e8472b', '#fff1d8', '#ff7a3c', stopTimer)}</Box>
+      </Box>
+    ) : over ? (
+      <Box flexDirection="column">
+        <Box>{ball('ended')}<Text color={MUTED} bold>{' Time is up'}</Text></Box>
+        {controls}
+      </Box>
+    ) : (
+      <Box flexDirection="column">
+        <Box>{ball('idle')}<Text bold>{` ${tm.mins} min`}</Text></Box>
+        {controls}
+      </Box>
+    ))
     const cur = pl?.phases.find(x => x.state === 'doing')
     const curNo = pl ? pl.phases.findIndex(x => x.state === 'doing') + 1 : 0
     const onStep = cur?.since ? `on this step for ${Math.max(1, Math.round((now / 1000 - cur.since) / 60))} min` : ''
+    const chip = <Text color={badge.color} bold>{`${badge.dot} ${badge.label}`}</Text>
+    // a clock you can see, because time slips by unnoticed: when it started and how long it has been
+    const clock = pl?.startedAt
+      ? finished && pl.finishedAt ? `started ${hhmm(pl.startedAt)}, took ${minsText(pl.finishedAt - pl.startedAt)}` : `started ${hhmm(pl.startedAt)}, ${minsText(t - pl.startedAt)} in`
+      : ''
+    const have = bg.week === mondayOf() ? bg.count : 0 // a case from an earlier week is already reset
+    const earned = Math.min(8, have)
 
     if (focusOn && cur) {
       return (
         <Box flexDirection="column">
           {buttons}
           {timerRow}
-          <Text> </Text>
-          {glow(`${curNo}. ${cur.name}`)}
-          {cur.note && <Text color="#b79cff">{`first step: ${cur.note}`}</Text>}
-          {onStep && <Text color={GREY}>{onStep}</Text>}
-          {pl?.you && <Text> </Text>}
-          {pl?.you && <Text color="#ffd166" bold>{pl.you}</Text>}
+          {card('NOW', badge.color, badge.color, (
+            <Box flexDirection="column">
+              {chip}
+              {glow(`${curNo}. ${cur.name}`)}
+              {cur.note && <Text color={VIOLET}>{`first step: ${cur.note}`}</Text>}
+              {onStep && <Text color={MUTED}>{onStep}</Text>}
+              {pl?.you && <Text color="#ffd166" bold>{pl.you}</Text>}
+            </Box>
+          ), STATE_ITEM[badge.key])}
         </Box>
       )
     }
 
+    const counts = tallyLines(ty.counts)
+    const hasActivity = !!ty.now || counts.length > 0 || jobs.length > 0 || list.length > 0
+    const hasPlan = !!pl && (pl.phases.length > 0 || !!pl.stats?.length)
+
     return (
-      <Box flexDirection="column">
-        {st && (
-          <Box>
-            {Array.from({ length: 30 }, (_, i) => (
-              <Text key={i} color={i < filled ? shade(i, 30) : '#2a2c33'}>■</Text>
-            ))}
-            <Text color={ACCENT} bold>{` ${pct.toFixed(0)}%`}</Text>
-          </Box>
-        )}
+      <Box flexDirection="column" backgroundColor="#1a0c14" paddingX={1} paddingBottom={1}>
+        <Box position="absolute" top={0} left={0} right={0} bottom={0} overflow="hidden">
+          {Svg ? <Svg source={PANEL_BG} alt="The Pokemon Center from FireRed and LeafGreen" width={1280} height={1664} /> : null}
+        </Box>
         {buttons}
-        {timerRow}
-        {st && <Text color={st.done === st.total ? DONE : '#b79cff'} bold>{st.done === st.total ? `All ${st.total} ${st.unit} done.` : `${st.done} of ${st.total} ${st.unit} done. ${st.total - st.done} to go.`}</Text>}
-        <Text dimColor>{pl?.goal ?? ''}</Text>
-        {!!pl?.stats?.length && (
+        <Text color={PINK} bold>{'POKÉMON CENTER'}</Text>
+        {card('STATUS', badge.color, badge.color, (
           <Box flexDirection="column">
-            {pl.stats.map((x, i) => (
-              <Text key={i} color={ACCENT}>{`${x.label}: ${x.value}`}</Text>
-            ))}
+            <Box>
+              {chip}
+              {clock && <Text color={MUTED}>{`  ·  ${clock}`}</Text>}
+            </Box>
+            {badge.reason && badge.key !== 'working' && badge.key !== 'done' && badge.key !== 'idle' && <Text color={badge.color}>{badge.reason}</Text>}
+            {st && (
+              <Box width={TW + 6} height={1}>
+                {Client
+                  ? <Client key="bar" module="./bar.tsx" props={barProps(st, badge.bar, TW)} />
+                  : <Box>{staticBar(Text, finished ? 100 : st.percent, TW)}<Text color={ACCENT} bold>{` ${Math.round(finished ? 100 : st.percent)}%`}</Text></Box>}
+              </Box>
+            )}
+            {st && Svg && <Svg source={healTray(st.done, st.total)} alt={`${st.done} of ${st.total} done`} width={Math.round(trayWidth(st.total) * 22 / 24)} height={22} />}
+            {st && <Text color={finished ? GREEN : VIOLET} bold>{finished ? `All ${st.total} ${st.unit} done.` : `${st.done} of ${st.total} ${st.unit} done. ${st.total - st.done} to go.`}</Text>}
+            {!finished && st?.upNext && <Text color={ACCENT}>{`Up next: ${st.upNext.name}`}</Text>}
+            {pl?.you && <Text color="#ffd166" bold>{`Your move: ${pl.you}`}</Text>}
+            {pl?.win && <Text color={WIN}>{`Latest win: ${pl.win}`}</Text>}
+            {!st && badge.key === 'idle' && <Text color={MUTED}>{'Nothing running. Say "task" to log one.'}</Text>}
           </Box>
-        )}
-        <Text> </Text>
-        {pl && pl.phases.length > 0 && (
+        ), STATE_ITEM[badge.key])}
+        {timerRow}
+        {card('BADGES', WIN, LINE, (
           <Box flexDirection="column">
-            <Text bold>The plan</Text>
-            {pl.phases.map((ph, i) => {
+            {Svg
+              ? <Svg source={badgeCase(earned)} alt={`${earned} of 8 Kanto gym badges`} width={Math.round(CASE_W * 1.25)} height={Math.round(CASE_H * 1.25)} />
+              : <Text color={WIN}>{BADGE_NAMES.map((_, i) => (i < earned ? '●' : '○')).join(' ')}</Text>}
+            <Text color={MUTED}>{earned >= 8 ? 'All 8. Resets Monday.' : `Next: ${BADGE_NAMES[earned]} Badge`}</Text>
+          </Box>
+        ), 'premier-ball')}
+        {!!pl?.tasksDone && <Text color={MUTED}>{`${pl.tasksDone} task${pl.tasksDone === 1 ? '' : 's'} finished today`}</Text>}
+        {hasPlan && card('PLAN', PINK, LINE, (
+          <Box flexDirection="column">
+            {pl?.goal && <Text color={MUTED}>{pl.goal}</Text>}
+            {pl?.phases.map((ph, i) => {
               const k = ph.state === 'done' ? 'done' : ph.state === 'doing' ? 'running' : 'idle'
               return (
                 <Box key={i}>
-                  {k === 'running' ? glow(`${i + 1}. ${ph.name}`) : <Text color={k === 'done' ? DONE : GREY} dimColor={k === 'idle'}>{`${k === 'done' ? '✓' : '□'} ${i + 1}. ${ph.name}`}</Text>}
-                  <Text color={k === 'running' ? '#b79cff' : GREY} dimColor={k === 'idle'}>{k === 'running' ? `  <- you are here${ph.note ? '. ' + ph.note : ''}` : ph.note ? `  ${ph.note}` : ''}</Text>
+                  {k === 'running' ? glow(`${i + 1}. ${ph.name}`) : <Text color={k === 'done' ? DONE : MUTED} dimColor={k === 'idle'}>{`${k === 'done' ? '✓' : '□'} ${i + 1}. ${ph.name}`}</Text>}
+                  <Text color={k === 'running' ? VIOLET : MUTED} dimColor={k === 'idle'}>{k === 'running' ? `  <- you are here${ph.note ? '. ' + ph.note : ''}` : k === 'done' && ph.took ? `  took ${minsText(ph.took)}` : ph.note ? `  ${ph.note}` : ''}</Text>
                 </Box>
               )
             })}
-            {onStep && <Text color={GREY}>{onStep}</Text>}
-            <Text> </Text>
+            {onStep && !finished && <Text color={MUTED}>{onStep}</Text>}
+            {pl?.stats?.map((x, i) => (
+              <Text key={`s${i}`} color={ACCENT}>{`${x.label}: ${x.value}`}</Text>
+            ))}
           </Box>
-        )}
-        {!!pl?.tasksDone && <Text color={WIN} bold>{`Tasks finished today: ${pl.tasksDone}`}</Text>}
-        {pl?.win && <Text color={WIN}>{`Latest win: ${pl.win}`}</Text>}
-        {pl?.you && <Text color="#ffd166" bold>{`Your move: ${pl.you}`}</Text>}
-        {(pl?.win || pl?.you || !!pl?.tasksDone) && <Text> </Text>}
-        {jobs.length > 0 && <Text bold>Working in the background</Text>}
-        {jobs.map(j => line(j.name, j.state, j.name, `${say(j.state)}. ${j.detail}`))}
-        {jobs.length > 0 && <Text> </Text>}
-        {ty.now && <Text bold>Right now</Text>}
-        {ty.now && <Text color={ACCENT}>{ty.now.text}</Text>}
-        {ty.now?.detail && <Text color={GREY}>{`  ${ty.now.detail}`}</Text>}
-        {ty.now && <Text> </Text>}
-        {tallyLines(ty.counts).length > 0 && <Text bold>So far on this task</Text>}
-        {tallyLines(ty.counts).map(l => (
-          <Text key={l} color={GREY}>{`  ${l}`}</Text>
-        ))}
-        {tallyLines(ty.counts).length > 0 && <Text> </Text>}
-        {list.length > 0 && <Text bold>{`Helpers (${list.filter(a => a.status === 'running').length} busy, ${list.length} total)`}</Text>}
-        {shown.map(a => {
-          const x = act[a.id]
-          return (
-            <Box key={a.id} flexDirection="column">
-              {line(a.id, a.status, `${a.type}: ${a.description}`, say(a.status))}
-              <Text color={GREY}>{x ? `   ${words(x.tool).now}${x.detail ? ': ' + x.detail : ''}  (${x.count})` : `   ${a.status}`}</Text>
-            </Box>
-          )
-        })}
-        {list.length > 0 && <Text> </Text>}
-        {events.length > 0 && <Text bold>Just happened</Text>}
-        {[...events].reverse().slice(0, feedRows).map((ev, i) => (
-          <Text key={i} color={GREY}>{`${age(ev.at)} ${ev.who === 'main' ? '' : ev.who + ' '}${words(ev.tool).past}${ev.detail ? ': ' + ev.detail : ''}`}</Text>
-        ))}
+        ), 'escape-rope')}
+        {hasActivity && card('ACTIVITY', PINK, LINE, (
+          <Box flexDirection="column">
+            {ty.now && <Text color={ACCENT}>{ty.now.text}</Text>}
+            {ty.now?.detail && <Text color={MUTED}>{ty.now.detail}</Text>}
+            {counts.length > 0 && <Text color={MUTED}>{counts.join('  ·  ')}</Text>}
+            {jobs.map(j => line(j.name, j.state, j.name, `${say(j.state)}. ${j.detail}`))}
+            {list.length > 0 && <Text bold>{`Helpers (${list.filter(a => a.status === 'running').length} busy, ${list.length} total)`}</Text>}
+            {shown.map(a => {
+              const x = act[a.id]
+              return (
+                <Box key={a.id} flexDirection="column">
+                  {line(a.id, a.status, `${a.type}: ${a.description}`, say(a.status))}
+                  <Text color={MUTED}>{x ? `   ${words(x.tool).now}${x.detail ? ': ' + x.detail : ''}  (${x.count})` : `   ${a.status}`}</Text>
+                </Box>
+              )
+            })}
+          </Box>
+        ), 'super-potion')}
+        {events.length > 0 && card('JUST HAPPENED', PINK, LINE, (
+          <Box flexDirection="column">
+            {[...events].reverse().slice(0, feedRows).map((ev, i) => (
+              <Text key={i} color={MUTED}>{`${age(ev.at)} ${ev.who === 'main' ? '' : ev.who + ' '}${words(ev.tool).past}${ev.detail ? ': ' + ev.detail : ''}`}</Text>
+            ))}
+          </Box>
+        ), 'rare-candy')}
       </Box>
     )
   })

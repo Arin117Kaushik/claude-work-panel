@@ -19,5 +19,6 @@ test('pane shows the timer even with no plan', async ($, on) => {
     },
   })
   expect(await ui.find({ type: 'Text', text: /TIMER/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Idle/ })).toBeDefined() // a quiet empty session reads Idle, not Working
   await ui.unmount()
 })

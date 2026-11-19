@@ -34,7 +34,10 @@ That is the whole loop: plan, count, show. Because the bar only moves when real 
 - **The numbers in plain words.** For a job like clearing an inbox: `35 of 105 threads done. 70 to go.` with found, picked, done and left alone listed under it.
 - **What Claude is doing right now, in plain words.** Not `mcp__claude-in-chrome__navigate`, but `Opening a page in Chrome`, `Searching the web  ·  4 web searches done`, `Reading the page in Chrome`, `Cleaning up email`. The pane keeps a running tally for the task: web searches done, pages read, files changed, commands run.
 - **A phase checklist for bigger jobs**, with the current step glowing and a "your move" line for the one thing you can do next.
-- **A focus timer** in a boxed block at the top. It drains as time passes and buzzes when it ends.
+- **One clear status.** Idle, Working on it, Waiting for your answer, Between steps, Finished, Stopped or Hit a problem. It says "Waiting for your answer" only when Claude actually asked you something, never as a guess.
+- **One trip per task.** The bar covers the whole task, however many steps or replies it takes. A reply ending does not finish it, and Claude extends it with `plan.py add` instead of starting over.
+- **A focus timer** with a Poke Ball beside it that rocks left and right while the time runs, like a catch, and goes still and dark when time is up. It drains as time passes and buzzes when it ends.
+- **A Pokemon Center look** (optional art, see below): the real FireRed/LeafGreen Pokemon Center behind the panel, one ball per step, colourful gym badges for real work, and pixel buttons.
 - **A focus view** that hides everything except the current step.
 - **Recent activity and helpers**, so you can see what is running right now.
 
@@ -59,12 +62,25 @@ python plan.py stat "Found in inbox" 201              # a number shown in plain 
 python plan.py did 35                                 # add to the done count
 python plan.py new "Goal" "Phase 1" "Phase 2"         # bigger job with a checklist
 python plan.py next "what just got done"              # finish a phase
+python plan.py add "Another phase"                    # more steps for the same task, the bar keeps going
+python plan.py earns "what you shipped"               # this task earns a gym badge (real work only)
+python plan.py done "what got done"                   # the whole task is finished
 python plan.py you "the one thing you could do"       # your move
 ```
 
+## The Pokemon theme and the art
+
+The panel works out of the box with neutral stand-in art (a plain ball, plain badges, a dark floor). The Pokemon look uses Nintendo and Game Freak art, which is not in this repo and should not be published. To get it for yourself, put your own copies in `plugins/work-log/assets/` (ignored by git) and run the generators in `plugins/work-log/tools/`:
+
+- `make_sprites.py` cuts the 8 Kanto badges from a Trainer Card sheet and tints them in their game colours.
+- `make_items.py` turns 24 by 24 item icons (Poke Balls and bag items) into vector pixel art.
+- `make_panelbg.py` builds the panel background from the FireRed/LeafGreen Pokemon Center map.
+
+Each script says which file it expects at the top. Keep the generated files for private use.
+
 ## Limits
 
-- Tested on Windows 11 with Claude Code 2.1.289 only. The panel should work elsewhere, but the timer buzz uses PowerShell, so it is silent on macOS and Linux.
+- Tested on Windows 11 with Claude Code 2.1.289 only. Colours, buttons and the animated ball are checked in the desktop app on Windows. The panel should work elsewhere, but the timer buzz uses PowerShell, so it is silent on macOS and Linux.
 - To use your own sound, put a `buzz.wav` or `buzz.mp3` in `~/.claude/adhd-progress/`. Without one you get the Windows alert.
 - Early software. The plugin API it uses is new, so expect rough edges. Issues and PRs welcome.
 - This is a focus aid, not medical advice or treatment.
