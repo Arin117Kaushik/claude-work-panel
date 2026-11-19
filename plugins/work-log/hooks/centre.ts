@@ -18,8 +18,8 @@ export const STATE_ITEM: Record<string, string> = {
 // the balls of the games, in the order steps use them
 const STEP_BALLS = ['poke-ball', 'great-ball', 'ultra-ball', 'premier-ball', 'luxury-ball', 'dusk-ball']
 
-// a longer timer gets a rarer ball
-export const ballFor = (mins: number) => (mins <= 5 ? 'poke-ball' : mins <= 10 ? 'great-ball' : mins <= 15 ? 'ultra-ball' : mins <= 25 ? 'quick-ball' : mins <= 45 ? 'dusk-ball' : 'master-ball')
+// the timer is always the regular Poke Ball
+export const ballFor = (_mins: number) => 'poke-ball'
 
 const GLOW = '<defs><radialGradient id="r"><stop offset="0" stop-color="#ff4a3a" stop-opacity="1"/><stop offset=".5" stop-color="#ff3a2a" stop-opacity=".55"/><stop offset="1" stop-color="#ff3a2a" stop-opacity="0"/></radialGradient></defs>'
 // the catch: roll left, roll right, a smaller rock, then a still beat. SMIL, so it plays smoothly and the source never changes between redraws.
@@ -35,14 +35,18 @@ export const timerBall = (mode: 'run' | 'idle' | 'ended', ball: string) => {
   return VB(28, 24, `<g transform="translate(2 0)"${mode === 'ended' ? ' opacity=".5"' : ''}>${ART(ball)}</g>`)
 }
 
-// one ball per step (up to 12), each a different kind. Finished steps are lit, the rest are dim. It never moves or glows: it only counts.
+// one Master Ball per step (up to 12). Finished steps are lit, the one being worked on is lit with a yellow marker under it, the rest are dim.
+// It never moves or glows: it only counts and points.
 export const trayWidth = (total: number) => Math.min(12, Math.max(1, total)) * 20 + 4
-export const healTray = (done: number, total: number) => {
+export const trayHeight = 30
+export const healTray = (done: number, total: number, finished = false) => {
   const n = Math.min(12, Math.max(1, total))
   const lit = Math.min(n, Math.floor((done / Math.max(1, total)) * n))
+  const cur = finished ? -1 : Math.min(n - 1, lit)
   let body = ''
   for (let i = 0; i < n; i++) {
-    body += `<g transform="translate(${i * 20} 0)" opacity="${i < lit ? 1 : 0.28}">${ART(STEP_BALLS[i % STEP_BALLS.length]!)}</g>`
+    body += `<g transform="translate(${i * 20} 0)" opacity="${i < lit || i === cur ? 1 : 0.28}">${ART('master-ball')}</g>`
+    if (i === cur) body += `<path fill="#ffd54a" d="M${i * 20 + 9} 27h5v1h-5zM${i * 20 + 10} 26h3v1h-3zM${i * 20 + 11} 25h1v1h-1z"/>`
   }
-  return VB(n * 20 + 4, 24, body)
+  return VB(n * 20 + 4, trayHeight, body)
 }

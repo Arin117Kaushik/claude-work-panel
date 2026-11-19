@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import { CASE_H, CASE_W, badgeCase } from './badgecase'
-import { STATE_ITEM, ballFor, healTray, icon, timerBall, trayWidth } from './centre'
+import { STATE_ITEM, ballFor, healTray, icon, timerBall, trayHeight, trayWidth } from './centre'
 import { PANEL_HEAD } from './panelbg'
 import { BADGE_NAMES } from './sprites'
 import { countLine, tallyLines, words } from './words'
@@ -60,9 +60,10 @@ const GREY = '#6b6f6c'
 const RED = '#ff5f5f'
 const AMBER = '#ffb347'
 const GREEN = '#5fd38d'
-const PINK = '#f4a6b8' // Pokemon Center counter pink
+const PINK = '#f0d890' // the Pokemon Center wall cream, for titles
 const ROSE = '#8c4a62'
-const CARD_LINE = '#f4a6b8' // one trim colour for every card, the Pokemon Center pink
+const CARD_LINE = '#e07a68' // one trim colour for every card, the Pokemon Center counter salmon
+const CARD_BG = '#2a141c' // the dark plum of the room, so text stays readable
 const ORANGE = '#ff8c42'
 const VIOLET = '#b79cff'
 
@@ -431,21 +432,21 @@ export const register: Register = on => {
       await update($, timer, x => ({ ...x, endsAt: null, over: false }))
     }
     const bump = (d: number) => update($, timer, x => ({ ...x, mins: Math.max(1, Math.min(90, x.mins + d)) }))
-    // pixel buttons: a thin frame on a themed fill, brighter under the pointer. Ice, lightning and fire for the three legendary birds.
-    const pix = (key: string, label: string, fill: string, ink: string, lift: string, onPress: () => void) => (
-      <Box key={`px-${key}`} borderStyle="single" borderColor={ink} backgroundColor={fill} paddingX={2} marginRight={1} hover={{ borderColor: '#ffffff', backgroundColor: lift }}>
-        <Button key={key} plain label={label.toUpperCase()} hover={{ color: ink }} onPress={onPress} />
+    // pixel buttons: one row, a dark tinted fill with light text, a little lighter under the pointer. Ice, lightning and fire for the legendary birds.
+    const pix = (key: string, label: string, fill: string, lift: string, onPress: () => void) => (
+      <Box key={`px-${key}`} backgroundColor={fill} paddingX={1} marginRight={1} hover={{ backgroundColor: lift }}>
+        <Button key={key} plain label={label.toUpperCase()} hover={{ color: '#ffffff' }} onPress={onPress} />
       </Box>
     )
     const buttons = (
       <Box>
-        {pix('focus', focusOn ? 'full view' : 'focus', '#bfe6ff', '#12385a', '#e6f6ff', () => update($, focus, f => !f))}
-        {pix('clear', 'clear', '#ffe14a', '#4a3200', '#fff29a', async () => {
+        {pix('focus', focusOn ? 'full view' : 'focus', '#1d3b57', '#2c5a85', () => update($, focus, f => !f))}
+        {pix('clear', 'clear', '#4a3a0c', '#6e5614', async () => {
           await update($, feed, () => [])
           await update($, activity, () => ({}))
           await update($, cleared, () => [...gone, ...list.map(a => a.id)])
         })}
-        {pix('close', 'close', '#e8472b', '#fff1d8', '#ff7a3c', () => $.ui.close({ id: PANE }))}
+        {pix('close', 'close', '#531c15', '#7e2c20', () => $.ui.close({ id: PANE }))}
       </Box>
     )
     const TW = 30
@@ -454,7 +455,7 @@ export const register: Register = on => {
     // one card style for everything on the panel: round border, a bold title, content below, one blank line between
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const card = (title: string, titleColor: string, border: string, children: any, item?: string) => (
-      <Box key={title} flexDirection="column" borderStyle="round" borderColor={CARD_LINE} paddingX={1} marginTop={1}>
+      <Box key={title} flexDirection="column" borderStyle="round" borderColor={CARD_LINE} backgroundColor={CARD_BG} paddingX={1} marginTop={1}>
         <Box>
           {Svg && item && <Svg source={icon(item)} alt={`${title} icon`} width={20} height={20} />}
           <Text color={titleColor} bold>{`${Svg && item ? ' ' : ''}${title}`}</Text>
@@ -467,9 +468,9 @@ export const register: Register = on => {
     const ball = (mode: 'run' | 'idle' | 'ended') => (Svg ? <Svg source={timerBall(mode, ballFor(tm.mins))} alt={mode === 'run' ? 'Poke Ball rocking while the timer runs' : 'Poke Ball timer'} width={34} height={30} isInteractive={mode === 'run'} /> : null)
     const controls = (
       <Box>
-        {pix('less', '-', '#c9ccd6', '#20222c', '#eceef5', () => bump(tm.mins <= 10 ? -1 : -5))}
-        {pix('more', '+', '#c9ccd6', '#20222c', '#eceef5', () => bump(tm.mins < 10 ? 1 : 5))}
-        {pix('start', 'start', '#58d878', '#0c3a1a', '#8af0a4', startTimer)}
+        {pix('less', '-', '#2c2f3a', '#454a5c', () => bump(tm.mins <= 10 ? -1 : -5))}
+        {pix('more', '+', '#2c2f3a', '#454a5c', () => bump(tm.mins < 10 ? 1 : 5))}
+        {pix('start', 'start', '#17462a', '#25693f', startTimer)}
       </Box>
     )
     const timerRow = card('TIMER', PINK, LINE, running ? (
@@ -480,7 +481,7 @@ export const register: Register = on => {
             <Text key={i} color={i < Math.ceil((left / (tm.mins * 60000)) * TW) ? '#ff6a5a' : '#2a2c33'}>■</Text>
           ))}
         </Box>
-        <Box>{pix('stop', 'stop', '#e8472b', '#fff1d8', '#ff7a3c', stopTimer)}</Box>
+        <Box>{pix('stop', 'stop', '#531c15', '#7e2c20', stopTimer)}</Box>
       </Box>
     ) : over ? (
       <Box flexDirection="column">
@@ -527,7 +528,7 @@ export const register: Register = on => {
     const hasPlan = !!pl && (pl.phases.length > 0 || !!pl.stats?.length)
 
     return (
-      <Box flexDirection="column" backgroundColor="#1a0c14" paddingX={1} paddingBottom={1}>
+      <Box flexDirection="column" backgroundColor="#1f0f16" paddingX={1} paddingBottom={1}>
         {Svg ? <Svg source={PANEL_HEAD} alt="The Pokemon Center counter from FireRed and LeafGreen" width={900} height={180} /> : null}
         {buttons}
         <Text color={PINK} bold>{'POKÉMON CENTER'}</Text>
@@ -545,7 +546,8 @@ export const register: Register = on => {
                   : <Box>{staticBar(Text, finished ? 100 : st.percent, TW)}<Text color={ACCENT} bold>{` ${Math.round(finished ? 100 : st.percent)}%`}</Text></Box>}
               </Box>
             )}
-            {st && Svg && <Svg source={healTray(st.done, st.total)} alt={`${st.done} of ${st.total} done`} width={Math.round(trayWidth(st.total) * 22 / 24)} height={22} />}
+            {st && Svg && <Svg source={healTray(st.done, st.total, finished)} alt={`${st.done} of ${st.total} done`} width={Math.round(trayWidth(st.total) * 22 / 24)} height={Math.round(22 * trayHeight / 24)} />}
+            {st && !finished && st.now && <Text color={PINK} bold>{`Step ${st.done + 1} of ${st.total}: ${st.now.name}`}</Text>}
             {st && <Text color={finished ? GREEN : VIOLET} bold>{finished ? `All ${st.total} ${st.unit} done.` : `${st.done} of ${st.total} ${st.unit} done. ${st.total - st.done} to go.`}</Text>}
             {!finished && st?.upNext && <Text color={ACCENT}>{`Up next: ${st.upNext.name}`}</Text>}
             {pl?.you && <Text color="#ffd166" bold>{`Your move: ${pl.you}`}</Text>}

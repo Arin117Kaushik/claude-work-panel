@@ -1,5 +1,10 @@
 # claude-work-panel
 
+<p align="center">
+  <img src="https://play.pokemonshowdown.com/sprites/gen4/lucario.png" height="64" alt="Lucario"> <img src="https://play.pokemonshowdown.com/sprites/gen5/blaziken-mega.png" height="64" alt="Mega Blaziken"> <img src="https://play.pokemonshowdown.com/sprites/gen3/charmander.png" height="64" alt="Charmander"> <img src="https://play.pokemonshowdown.com/sprites/gen4/alakazam.png" height="64" alt="Alakazam"> <img src="https://play.pokemonshowdown.com/sprites/gen4/gengar.png" height="64" alt="Gengar"><br>
+  <img src="https://play.pokemonshowdown.com/sprites/itemicons/poke-ball.png" alt="Poke Ball"> <img src="https://play.pokemonshowdown.com/sprites/itemicons/great-ball.png" alt="Great Ball"> <img src="https://play.pokemonshowdown.com/sprites/itemicons/ultra-ball.png" alt="Ultra Ball"> <img src="https://play.pokemonshowdown.com/sprites/itemicons/master-ball.png" alt="Master Ball"> <img src="https://play.pokemonshowdown.com/sprites/itemicons/potion.png" alt="Potion"> <img src="https://play.pokemonshowdown.com/sprites/itemicons/rare-candy.png" alt="Rare Candy">
+</p>
+
 **See what your Claude is actually doing, instead of asking it for a status update.**
 
 Type `/work` in Claude Code and a live panel shows what Claude is doing right now, how far along it is, and what is left. You look at the panel. You stop typing "where are you at?" and "how long will this take?".
@@ -37,7 +42,7 @@ That is the whole loop: plan, count, show. Because the bar only moves when real 
 - **One clear status.** Idle, Working on it, Waiting for your answer, Between steps, Finished, Stopped or Hit a problem. It says "Waiting for your answer" only when Claude actually asked you something, never as a guess.
 - **One trip per task.** The bar covers the whole task, however many steps or replies it takes. A reply ending does not finish it, and Claude extends it with `plan.py add` instead of starting over.
 - **A focus timer** with a Poke Ball beside it that rocks left and right while the time runs, like a catch, and goes still and dark when time is up. It drains as time passes and buzzes when it ends.
-- **A Pokemon Center look** (optional art, see below): the real FireRed/LeafGreen Pokemon Center behind the panel, one ball per step, colourful gym badges for real work, and pixel buttons.
+- **A Pokemon Center look** (optional art, see below): the FireRed/LeafGreen Pokemon Center counter as a banner, cream and salmon colours to match, a row of Master Balls with one per step and a marker on the step you are on ("Step 2 of 5: Reading the page"), colourful Kanto gym badges for real work, a plain Poke Ball on the timer, and small pixel buttons.
 - **A focus view** that hides everything except the current step.
 - **Recent activity and helpers**, so you can see what is running right now.
 
@@ -86,3 +91,5 @@ Each script says which file it expects at the top. Keep the generated files for 
 - This is a focus aid, not medical advice or treatment.
 
 MIT licensed.
+
+The Pokemon and item pictures above are loaded from [Pokemon Showdown](https://play.pokemonshowdown.com/sprites/), not stored here. Pokemon and its art belong to Nintendo, Game Freak and Creatures. This is an unofficial fan theme with no affiliation.
